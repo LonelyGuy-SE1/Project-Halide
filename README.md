@@ -16,45 +16,19 @@ Shooting 35mm and medium format film is an expensive, high-stakes process. When 
 4. **Diagnostic Synthesis:** The extracted visual data is passed to a reasoning model, which cross-references the anomalies against the user's provided metadata to deduce the root cause (e.g., a mechanical hinge leak vs. a shutter timing issue).
 5. **Output & Legacy:** The interface returns an annotated version of the negative alongside a clear, step-by-step diagnostic fix. The result is logged into a local, edge-resident database to track the photographer's performance across different film stocks over time.
 
-## 3. Technology Stack & Track Alignment Matrix
+## 3. Technology Stack
 
-Halide utilizes a deterministic, dual-model architecture designed specifically to operate within strict parameter constraints (≤ 32B) while executing entirely on edge infrastructure.
+Halide utilizes a deterministic, dual-model architecture designed specifically to operate within strict parameter constraints (≤ 32B total parameters) while executing entirely on edge infrastructure.
 
 ### Model Architecture
 
-* **Vision Extraction Agent (OpenBMB Track):**
-* **Task:** High-density visual extraction and localized defect identification.
-* **Technology:** `MiniCPM-V` (Fine-tuned for film deterioration profiles).
-
-
-* **Reasoning & Diagnostic Agent (NVIDIA Track):**
-* **Task:** Diagnostic logic synthesis and actionable output generation.
-* **Technology:** `Nemotron-Mini-4B-Instruct` (Ingests vision outputs and user context).
-
-
+- **Vision Extraction Agent** — `MiniCPM-V 4.6` (1.3B params, OpenBMB). High-density visual extraction and localized defect identification. Fine-tuned for film deterioration profiles.
+- **Reasoning & Diagnostic Agent** — `Nemotron-Mini-4B-Instruct` (NVIDIA). Diagnostic logic synthesis and actionable output generation. Ingests vision outputs and user context.
 
 ### Infrastructure & Engineering
 
-* **Model Fine-Tuning (Modal Track):**
-* **Task:** Dataset pre-processing and training of the vision agent on specialized visual datasets.
-* **Technology:** Modal Serverless Infrastructure (Cloud compute for training only).
-
-
-* **Inference Engine (Llama Champion Badge):**
-* **Task:** Zero-bottleneck concurrent model execution on edge constraints.
-* **Technology:** `llama.cpp` runtime.
-
-
-* **Deployment Runtime (Off the Grid Badge):**
-* **Task:** Fully localized hosting with zero external API dependencies during runtime.
-* **Technology:** Hugging Face Space (Zero-tier hardware allocation).
-
-
-* **Frontend UI (Off-Brand Badge):**
-* **Task:** Custom, highly aesthetic diagnostic heads-up display.
-* **Technology:** Gradio `gr.Server` utilizing custom HTML/CSS injection.
-
-
-* **Local Telemetry:**
-* **Task:** On-device historical tracking of user diagnostics.
-* **Technology:** Embedded SQLite database.
+- **Model Fine-Tuning** — Modal Serverless Infrastructure. Cloud compute for dataset pre-processing and training of the vision agent on specialized visual datasets.
+- **Inference Engine** — `llama.cpp` runtime. Zero-bottleneck concurrent model execution on edge constraints.
+- **Deployment Runtime** — Hugging Face Spaces. Fully localized hosting with zero external API dependencies during runtime.
+- **Frontend UI** — Gradio `gr.Server` with custom HTML/CSS injection. Custom, highly aesthetic diagnostic heads-up display.
+- **Local Telemetry** — Embedded SQLite database. On-device historical tracking of user diagnostics.

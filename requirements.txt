@@ -1,0 +1,11 @@
+gradio
+torch
+transformers
+accelerate
+peft
+datasets
+huggingface_hub
+pillow
+numpy
+sqlite-utils
+modal
