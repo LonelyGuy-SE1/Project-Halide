@@ -4,3 +4,8 @@ diary/
 transcript.txt
 .nottracked
 .opencode
+venv/
+__pycache__/
+*.pyc
+data/raw/
+checkpoints/
