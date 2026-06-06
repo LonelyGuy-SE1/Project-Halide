@@ -7,12 +7,16 @@ import modal
 app = modal.App("halide-vision-training")
 
 # Container image with all dependencies
+# NOTE: LLaMA-Factory v0.9.5 pyproject.toml defines NO optional extras (no [torch,metrics,deepspeed]).
+# Install is `pip install -e .` plus optional `pip install -r requirements/metrics.txt` etc.
+# We also pin the git clone to the v0.9.5 release branch (not main) for reproducibility.
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("git", "wget")
     .run_commands(
-        "cd /root && git clone https://github.com/hiyouga/LLaMA-Factory",
-        "cd /root/LLaMA-Factory && pip install -e '.[torch,metrics,deepspeed,minicpm_v]'",
+        "cd /root && git clone --depth 1 -b v0.9.5 https://github.com/hiyouga/LLaMA-Factory",
+        "cd /root/LLaMA-Factory && pip install -e .",
+        "cd /root/LLaMA-Factory && pip install -r requirements/metrics.txt",
     )
     .pip_install(
         "transformers[torch]==5.7.0",
@@ -29,7 +33,7 @@ checkpoint_volume = modal.Volume.from_name("halide-checkpoints", create_if_missi
 
 @app.function(
     image=image,
-    gpu="T4",
+    gpu="A100-80GB",
     volumes={
         "/data": data_volume,
         "/checkpoints": checkpoint_volume,
@@ -40,23 +44,25 @@ checkpoint_volume = modal.Volume.from_name("halide-checkpoints", create_if_missi
 )
 def train(
     epochs: int = 5,
-    batch_size: int = 2,
+    batch_size: int = 1,
     learning_rate: float = 1e-5,
     lora_rank: int = 16,
     max_samples: int = 1000,
-    max_seq_length: int = 3072,
+    max_seq_length: int = 1024,
     output_dir: str = "/checkpoints/minicpm-v-4.6-lora",
 ):
     """
     Run LoRA fine-tuning on MiniCPM-V 4.6.
     Follows the official OpenBMB LLaMA-Factory example.
+    Uses A100-80GB because T4 (16GB) is insufficient for MiniCPM-V 4.6 training
+    (5 prior T4 runs OOMed even with batch_size=1 and max_seq_length=1024).
     """
     import subprocess
     import os
     from pathlib import Path
 
     print("=== Project Halide: Vision Model Training ===")
-    print(f"GPU: T4 | Epochs: {epochs} | LR: {learning_rate} | LoRA rank: {lora_rank}")
+    print(f"GPU: A100-80GB | Epochs: {epochs} | LR: {learning_rate} | LoRA rank: {lora_rank}")
 
     # Step 1: Register dataset in LLaMA-Factory
     import json
@@ -95,24 +101,17 @@ def train(
 
     print("Copied data to LLaMA-Factory directory")
 
-    # Patch mm_plugin.py to handle missing image_sizes key
-    mm_plugin_path = Path("/root/LLaMA-Factory/src/llamafactory/data/mm_plugin.py")
-    with open(mm_plugin_path) as f:
-        content = f.read()
+    # NOTE: The mm_plugin.py patch for image_sizes is NOT needed when using
+    # template: minicpm_v_4_6 because MiniCPMV4_6Plugin does NOT use image_bound.
+    # It uses _build_v4_6_placeholder and get_placeholder_mask instead.
 
-    # The MiniCPMVPlugin.process_messages accesses mm_inputs["image_sizes"]
-    # but MiniCPMV4_6 processor may not return it. Add .get() fallback.
-    old_line = '            image_sizes = mm_inputs["image_sizes"]'
-    new_line = '            image_sizes = mm_inputs.get("image_sizes", mm_inputs.get("orig_sizes", []))  # patched'
-    if old_line in content and new_line not in content:
-        content = content.replace(old_line, new_line)
-        with open(mm_plugin_path, "w") as f:
-            f.write(content)
-        print("Patched mm_plugin.py for image_sizes fallback")
-
-    # Step 3: Write YAML config (follows official OpenBMB example exactly)
+    # Step 3: Write YAML config (follows official OpenBMB LLaMA-Factory example closely)
+    # Use the official registry model name with underscore: openbmb/MiniCPM-V-4_6
+    # image_max_pixels limits image size to prevent OOM (matches qwen3_vl example).
+    # preprocessing_num_workers: 1 is plenty for a 10-image dataset.
     config_yaml = f"""
-model_name_or_path: openbmb/MiniCPM-V-4.6
+model_name_or_path: openbmb/MiniCPM-V-4_6
+image_max_pixels: 262144
 trust_remote_code: true
 
 stage: sft
@@ -124,11 +123,11 @@ lora_rank: {lora_rank}
 
 dataset: halide_film_defects
 dataset_dir: /root/LLaMA-Factory/data
-template: minicpm_v
+template: minicpm_v_4_6
 cutoff_len: {max_seq_length}
 max_samples: {max_samples}
 overwrite_cache: true
-preprocessing_num_workers: 4
+preprocessing_num_workers: 1
 
 per_device_train_batch_size: {batch_size}
 gradient_accumulation_steps: 8
@@ -142,6 +141,7 @@ logging_steps: 10
 save_steps: 100
 save_total_limit: 3
 report_to: none
+save_only_model: false
 
 output_dir: {output_dir}
 """
@@ -176,7 +176,7 @@ output_dir: {output_dir}
 
 @app.function(
     image=image,
-    gpu="T4",
+    gpu="A100-80GB",
     volumes={"/checkpoints": checkpoint_volume},
     timeout=3600,
 )
@@ -191,9 +191,9 @@ def export_model(
     print("=== Exporting Merged Model ===")
 
     config_yaml = f"""
-model_name_or_path: openbmb/MiniCPM-V-4.6
+model_name_or_path: openbmb/MiniCPM-V-4_6
 adapter_name_or_path: {checkpoint_path}
-template: minicpm_v
+template: minicpm_v_4_6
 finetuning_type: lora
 export_dir: {output_dir}
 export_size: 2
