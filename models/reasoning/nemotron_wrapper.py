@@ -3,6 +3,12 @@
 Per AGENTS.md, this is the second stage of the dual-model pipeline.
 Receives defect JSON from the vision model plus user metadata, returns
 root cause diagnosis and physical remediation steps.
+
+The `generate` method accepts a fully-formed `messages: list[dict]` array
+(system, user, assistant turns). It does NOT pre-process the messages; the
+caller is responsible for assembling the full few-shot + system + current
+request array. This is the only correct way to use a chat-tuned model with
+`tokenizer.apply_chat_template`.
 """
 
 from __future__ import annotations
@@ -14,7 +20,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 NEMOTRON_MODEL_ID = "nvidia/Nemotron-Mini-4B-Instruct"
-MAX_NEW_TOKENS = int(os.getenv("HALIDE_NEMOTRON_MAX_TOKENS", "512"))
+MAX_NEW_TOKENS = int(os.getenv("HALIDE_NEMOTRON_MAX_TOKENS", "768"))
 
 
 class NemotronReasoner:
@@ -48,24 +54,27 @@ class NemotronReasoner:
         self._device = str(next(self._model.parameters()).device)
         logger.info("Nemotron loaded on %s", self._device)
 
-    def generate(self, prompt: str, system: str | None = None) -> str:
+    def generate(self, messages: list[dict[str, str]]) -> str:
+        """Run chat completion on a fully-formed messages array.
+
+        `messages` must be a list of dicts with `role` in
+        {"system", "user", "assistant"} and `content` strings. The caller
+        is responsible for assembling the full conversation including any
+        few-shot examples. This wrapper just tokenizes and generates.
+        """
         if self._model is None:
             self.load()
 
-        import torch
-
-        if system:
-            messages = [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ]
-        else:
-            messages = [{"role": "user", "content": prompt}]
+        if not messages:
+            raise ValueError("messages must be a non-empty list of {role, content} dicts")
 
         input_ids = self._tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, return_tensors="pt"
+            messages,
+            add_generation_prompt=True,
+            return_tensors="pt",
         ).to(self._device)
 
+        import torch
         with torch.inference_mode():
             output = self._model.generate(
                 input_ids,

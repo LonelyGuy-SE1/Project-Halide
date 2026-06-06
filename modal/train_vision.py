@@ -1,15 +1,20 @@
 """
 Modal training script for MiniCPM-V 4.6 using LLaMA-Factory.
 Follows official OpenBMB documentation exactly.
+
+Per log.txt directive (2026-06-06):
+  - lora_rank: 64
+  - lora_alpha: 128
+  - lora_target: q_proj,v_proj,k_proj,o_proj (vision tower + language)
+  - num_train_epochs: 50
+  - early_stopping_patience: 5 (terminates if eval_loss stagnates for 5 evals)
+  - bbox format: integer [0, 999] grid (aligned with VLM pre-training)
 """
 import modal
 
-app = modal.App("halide-vision-training")
+app = modal.App("halide-vision-training-v2")
 
 # Container image with all dependencies
-# NOTE: LLaMA-Factory v0.9.5 pyproject.toml defines NO optional extras (no [torch,metrics,deepspeed]).
-# Install is `pip install -e .` plus optional `pip install -r requirements/metrics.txt` etc.
-# We also pin the git clone to the v0.9.5 release branch (not main) for reproducibility.
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("git", "wget", "cmake", "build-essential")
@@ -43,33 +48,46 @@ checkpoint_volume = modal.Volume.from_name("halide-checkpoints", create_if_missi
         "/checkpoints": checkpoint_volume,
     },
     secrets=[modal.Secret.from_name("huggingface-secret")],
-    timeout=12 * 3600,
+    timeout=2 * 3600,
     retries=modal.Retries(initial_delay=0, max_retries=2),
 )
 def train(
-    epochs: int = 5,
+    epochs: int = 50,
     batch_size: int = 1,
     learning_rate: float = 1e-5,
-    lora_rank: int = 16,
+    lora_rank: int = 64,
+    lora_alpha: int = 128,
+    lora_target: str = "q_proj,v_proj,k_proj,o_proj",
     max_samples: int = 1000,
-    max_seq_length: int = 3072,
-    output_dir: str = "/checkpoints/minicpm-v-4.6-lora",
+    max_seq_length: int = 4096,
+    output_dir: str = "/checkpoints/minicpm-v-4.6-lora-v2",
+    early_stopping_patience: int = 5,
+    eval_steps: int = 2,
 ):
     """
-    Run LoRA fine-tuning on MiniCPM-V 4.6.
-    Follows the official OpenBMB LLaMA-Factory example.
-    Uses A100-80GB because T4 (16GB) is insufficient for MiniCPM-V 4.6 training
-    (5 prior T4 runs OOMed even with batch_size=1 and max_seq_length=1024).
+    Run LoRA fine-tuning on MiniCPM-V 4.6 with vision tower targeting.
+
+    Per log.txt (2026-06-06):
+      - rank 64, alpha 128
+      - target q_proj,v_proj,k_proj,o_proj (covers both SigLIP2-400M vision
+        tower and Qwen3.5-0.8B language backbone; both module types share
+        these names)
+      - 50 epochs, early stop patience 5
+      - integer [0, 999] bbox grid format
+
+    Uses A100-80GB because T4 (16GB) is insufficient for MiniCPM-V 4.6 training.
     """
     import subprocess
     import os
     from pathlib import Path
 
-    print("=== Project Halide: Vision Model Training ===")
-    print(f"GPU: A100-80GB | Epochs: {epochs} | LR: {learning_rate} | LoRA rank: {lora_rank}")
-    print(f"cutoff_len: 3072 (fits 150 defects * 17 tok/defect + ~600 image+system tokens)")
+    print("=== Project Halide: Vision Model Training v2 ===")
+    print(f"GPU: A100-80GB | Epochs: {epochs} | LR: {learning_rate}")
+    print(f"LoRA: rank={lora_rank}, alpha={lora_alpha}, target={lora_target}")
+    print(f"cutoff_len: {max_seq_length} (fits 150 defects in int 0-999 format)")
+    print(f"Early stopping: patience={early_stopping_patience}, eval every {eval_steps} epochs")
 
-    # Step 1: Register dataset in LLaMA-Factory
+    # Step 1: Register both train and val datasets in LLaMA-Factory
     import json
     dataset_dir = Path("/root/LLaMA-Factory/data")
     dataset_info_path = dataset_dir / "dataset_info.json"
@@ -88,17 +106,27 @@ def train(
             "images": "images",
         },
     }
+    dataset_info["halide_film_defects_val"] = {
+        "file_name": "training_sharegpt_val.json",
+        "formatting": "sharegpt",
+        "columns": {
+            "messages": "conversations",
+            "images": "images",
+        },
+    }
 
     with open(dataset_info_path, "w") as f:
         json.dump(dataset_info, f, indent=2)
 
-    print("Registered dataset in LLaMA-Factory")
+    print("Registered train + val datasets in LLaMA-Factory")
 
     # Step 2: Copy data to LLaMA-Factory data directory
     import shutil
-    shutil.copy("/data/training_sharegpt.json", "/root/LLaMA-Factory/data/training_sharegpt.json")
+    shutil.copy("/data/training_sharegpt.json",
+                "/root/LLaMA-Factory/data/training_sharegpt.json")
+    shutil.copy("/data/training_sharegpt_val.json",
+                "/root/LLaMA-Factory/data/training_sharegpt_val.json")
 
-    # Copy scan images
     scans_src = Path("/data/scans")
     scans_dst = Path("/root/LLaMA-Factory/data/scans")
     if scans_src.exists():
@@ -106,14 +134,7 @@ def train(
 
     print("Copied data to LLaMA-Factory directory")
 
-    # NOTE: The mm_plugin.py patch for image_sizes is NOT needed when using
-    # template: minicpm_v_4_6 because MiniCPMV4_6Plugin does NOT use image_bound.
-    # It uses _build_v4_6_placeholder and get_placeholder_mask instead.
-
-    # Step 3: Write YAML config (follows official OpenBMB LLaMA-Factory example closely)
-    # Use the official registry model name with underscore: openbmb/MiniCPM-V-4_6
-    # image_max_pixels limits image size to prevent OOM (matches qwen3_vl example).
-    # preprocessing_num_workers: 1 is plenty for a 10-image dataset.
+    # Step 3: Write YAML config
     config_yaml = f"""
 model_name_or_path: openbmb/MiniCPM-V-4_6
 image_max_pixels: 262144
@@ -123,10 +144,12 @@ stage: sft
 do_train: true
 
 finetuning_type: lora
-lora_target: q_proj,v_proj
+lora_target: {lora_target}
 lora_rank: {lora_rank}
+lora_alpha: {lora_alpha}
 
 dataset: halide_film_defects
+eval_dataset: halide_film_defects_val
 dataset_dir: /root/LLaMA-Factory/data
 template: minicpm_v_4_6
 cutoff_len: {max_seq_length}
@@ -142,11 +165,21 @@ lr_scheduler_type: cosine
 warmup_ratio: 0.1
 bf16: true
 
-logging_steps: 10
-save_steps: 100
+logging_steps: 1
+save_strategy: epoch
 save_total_limit: 3
 report_to: none
 save_only_model: false
+
+# Early stopping + best model selection
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+early_stopping_patience: {early_stopping_patience}
+early_stopping_threshold: 0.0
+
+eval_strategy: epoch
+eval_steps: {eval_steps}
 
 output_dir: {output_dir}
 """
@@ -186,8 +219,8 @@ output_dir: {output_dir}
     timeout=3600,
 )
 def export_model(
-    checkpoint_path: str = "/checkpoints/minicpm-v-4.6-lora",
-    output_dir: str = "/checkpoints/minicpm-v-4.6-merged",
+    checkpoint_path: str = "/checkpoints/minicpm-v-4.6-lora-v2",
+    output_dir: str = "/checkpoints/minicpm-v-4.6-merged-v2",
 ):
     """Export LoRA checkpoint merged with base model."""
     import os
@@ -228,68 +261,15 @@ export_legacy_format: false
     return output_dir
 
 
-@app.function(
-    image=image,
-    cpu=8,
-    volumes={"/checkpoints": checkpoint_volume},
-    timeout=1800,
-)
-def convert_and_quantize(
-    merged_path: str = "/checkpoints/minicpm-v-4.6-merged",
-    output_path: str = "/checkpoints/minicpm-v-4.6-q4km.gguf",
-):
-    """Convert merged HF model to GGUF, then quantize to Q4_K_M."""
-    import os
-    import subprocess
-
-    print("=== Converting HF to GGUF (FP16) ===")
-    result = subprocess.run(
-        [
-            "python",
-            "/root/llama.cpp/convert_hf_to_gguf.py",
-            merged_path,
-            "--outfile",
-            output_path + ".fp16",
-            "--outtype",
-            "f16",
-        ],
-        capture_output=False,
-    )
-    if result.returncode != 0:
-        print("GGUF conversion failed")
-        return None
-
-    print("=== Quantizing to Q4_K_M ===")
-    result = subprocess.run(
-        [
-            "/root/llama.cpp/build/bin/llama-quantize",
-            output_path + ".fp16",
-            output_path,
-            "Q4_K_M",
-        ],
-        capture_output=False,
-    )
-    if result.returncode != 0:
-        print("Quantization failed")
-        return None
-
-    # Cleanup intermediate fp16
-    if os.path.exists(output_path + ".fp16"):
-        os.remove(output_path + ".fp16")
-
-    checkpoint_volume.commit()
-    print(f"Final GGUF: {output_path}")
-    return output_path
-
-
 @app.local_entrypoint()
-def main(epochs: int = 15, do_export: bool = True, do_quantize: bool = True):
-    """Run training (and optional export and quantize) on Modal."""
+def main(epochs: int = 50, do_export: bool = True):
+    """Run training (and optional export) on Modal A100-80GB.
+
+    Per log.txt (2026-06-06) directive: rank 64, alpha 128, vision_tower
+    targets, 50 epochs with early stopping patience 5.
+    """
     output = train.remote(epochs=epochs)
     print(f"\nTraining output: {output}\n")
     if do_export:
         merged = export_model.remote()
         print(f"\nMerged model: {merged}\n")
-    if do_quantize:
-        gguf = convert_and_quantize.remote()
-        print(f"\nGGUF: {gguf}\n")

@@ -175,8 +175,18 @@ def build_messages(
     defect_summary: dict[str, int],
     total_defects: int,
 ) -> list[dict[str, str]]:
-    """Return full message list (few-shot + current request) for the reasoner."""
-    messages: list[dict[str, str]] = []
+    """Return full message list for the reasoner.
+
+    The list is structured for `tokenizer.apply_chat_template`:
+        [system, user, assistant, user, assistant, user, assistant, user]
+    The system prompt is index 0, the three few-shot examples follow as
+    (user, assistant) pairs, and the final user message is the actual
+    defect report. This preserves the role structure that
+    `Nemotron-Mini-4B-Instruct` was trained on.
+    """
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+    ]
     messages.extend(FEW_SHOT_EXAMPLES)
     messages.append(
         {

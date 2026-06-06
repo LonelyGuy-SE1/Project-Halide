@@ -12,3 +12,7 @@ storage/*.db
 data/raw/
 checkpoints/
 examples/annotated_*.png
+data/test_results/
+data/test_images/01_indist_scan1.png
+data/test_images/02_ood_synthetic_scratch.png
+data/test_images/03_ood_blueneg.png

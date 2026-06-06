@@ -23,9 +23,10 @@ MAX_NEW_TOKENS = int(os.getenv("HALIDE_MAX_NEW_TOKENS", "3072"))
 DETECTION_PROMPT = (
     "You are a film defect detection engine. Analyze the film scan and detect "
     "all visible defects. Output a JSON object with a 'defects' array. Each "
-    "defect has: 'label' (dust, dirt, scratch, long_hair, short_hair), 'bbox' "
-    "(normalized [x_min, y_min, x_max, y_max] from 0.0 to 1.0). Output JSON "
-    "only, no explanation."
+    "defect has: 'label' (dust, dirt, scratch, long_hair, short_hair), "
+    "'bbox' as 4 integers in the [0, 999] grid "
+    "[x_min, y_min, x_max, y_max] (multiply by image width/height to get pixels). "
+    "Output JSON only, no explanation."
 )
 
 

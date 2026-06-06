@@ -1,9 +1,39 @@
-"""Few-shot prompt templates for the Nemotron diagnostic reasoner."""
+"""Modal T4 backend for testing the Nemotron reasoning model.
+
+Mirrors the architecture of modal/view_inference.py but for the second stage
+of the pipeline. Takes a defect summary dict, builds the few-shot message
+array via inline prompts, and generates a diagnosis.
+
+The test uses the known-broken vision output (default-bbox hallucination)
+to verify the Nemotron wrapper correctly ingests the structured messages
+array and emits a properly-formatted diagnosis text.
+
+Run:
+  modal run modal/test_reasoning.py::main
+  modal run modal/test_reasoning.py::main --scenario broken_vision_default_bbox
+"""
 
 from __future__ import annotations
 
 import json
-from typing import Any
+import time
+
+import modal
+
+app = modal.App("halide-reasoning-test")
+
+image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .pip_install(
+        "torch==2.5.0",
+        "transformers==4.48.0",
+        "accelerate==1.2.0",
+        "safetensors",
+    )
+)
+
+NEMOTRON_MODEL_ID = "nvidia/Nemotron-Mini-4B-Instruct"
+
 
 SYSTEM_PROMPT = (
     "You are a senior analog film lab technician with 30 years of experience "
@@ -13,7 +43,7 @@ SYSTEM_PROMPT = (
 )
 
 
-FEW_SHOT_EXAMPLES: list[dict[str, str]] = [
+FEW_SHOT_EXAMPLES = [
     {
         "role": "user",
         "content": (
@@ -140,15 +170,7 @@ FEW_SHOT_EXAMPLES: list[dict[str, str]] = [
 ]
 
 
-def build_user_prompt(
-    film_type: str,
-    film_age_years: int,
-    storage: str,
-    scan_resolution_dpi: int,
-    defect_summary: dict[str, int],
-    total_defects: int,
-) -> str:
-    """Build the user message for the current diagnosis request."""
+def build_messages(film_type, film_age_years, storage, scan_resolution_dpi, defect_summary, total_defects):
     payload = {
         "film_type": film_type,
         "film_age_years": film_age_years,
@@ -160,35 +182,150 @@ def build_user_prompt(
         "scan_resolution_dpi": scan_resolution_dpi,
         "total_defect_count": total_defects,
     }
-    return (
+    user_msg = (
         "## Defect report\n"
         f"{json.dumps(payload, indent=2)}\n\n"
         "What is the root cause and what physical fixes do you recommend?"
     )
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages.extend(FEW_SHOT_EXAMPLES)
+    messages.append({"role": "user", "content": user_msg})
+    return messages
 
 
-def build_messages(
+@app.function(
+    image=image,
+    gpu="T4",
+    timeout=900,
+    secrets=[modal.Secret.from_name("huggingface-secret")],
+)
+def run_reasoning_all(scenarios: list[dict]) -> list[dict]:
+    """Run all scenarios in a single container. Model is loaded once."""
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    t0 = time.time()
+    tokenizer = AutoTokenizer.from_pretrained(NEMOTRON_MODEL_ID)
+    model = AutoModelForCausalLM.from_pretrained(
+        NEMOTRON_MODEL_ID,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+    )
+    device = str(next(model.parameters()).device)
+    load_s = round(time.time() - t0, 2)
+
+    results = []
+    for s in scenarios:
+        t1 = time.time()
+        total = sum(s["defect_summary"].values())
+        messages = build_messages(
+            film_type=s["film_type"],
+            film_age_years=s["film_age_years"],
+            storage=s["storage"],
+            scan_resolution_dpi=s["scan_resolution_dpi"],
+            defect_summary=s["defect_summary"],
+            total_defects=total,
+        )
+        input_ids = tokenizer.apply_chat_template(
+            messages, add_generation_prompt=True, return_tensors="pt"
+        ).to(device)
+        with torch.inference_mode():
+            output = model.generate(
+                input_ids,
+                max_new_tokens=768,
+                do_sample=False,
+                pad_token_id=tokenizer.eos_token_id,
+            )
+        response_ids = output[0][input_ids.shape[-1]:]
+        text = tokenizer.decode(response_ids, skip_special_tokens=True)
+        gen_s = round(time.time() - t1, 2)
+        results.append({
+            "scenario_name": s["name"],
+            "model_id": NEMOTRON_MODEL_ID,
+            "device": device,
+            "load_seconds": load_s,
+            "generation_seconds": gen_s,
+            "num_messages": len(messages),
+            "roles": [m["role"] for m in messages],
+            "diagnosis_text": text,
+            "input_defect_summary": s["defect_summary"],
+            "input_film_type": s["film_type"],
+        })
+
+    return results
+
+
+@app.function(
+    image=image,
+    gpu="T4",
+    timeout=600,
+    secrets=[modal.Secret.from_name("huggingface-secret")],
+)
+def run_reasoning(
+    defect_summary: dict,
     film_type: str,
     film_age_years: int,
     storage: str,
     scan_resolution_dpi: int,
-    defect_summary: dict[str, int],
-    total_defects: int,
-) -> list[dict[str, str]]:
-    """Return full message list (few-shot + current request) for the reasoner."""
-    messages: list[dict[str, str]] = []
-    messages.extend(FEW_SHOT_EXAMPLES)
-    messages.append(
-        {
-            "role": "user",
-            "content": build_user_prompt(
-                film_type,
-                film_age_years,
-                storage,
-                scan_resolution_dpi,
-                defect_summary,
-                total_defects,
-            ),
-        }
-    )
-    return messages
+) -> dict:
+    """Single-scenario convenience wrapper."""
+    out = run_reasoning_all.call([{
+        "name": "single",
+        "defect_summary": defect_summary,
+        "film_type": film_type,
+        "film_age_years": film_age_years,
+        "storage": storage,
+        "scan_resolution_dpi": scan_resolution_dpi,
+    }])
+    return out[0]
+
+
+SCENARIOS = [
+    {
+        "name": "broken_vision_default_bbox",
+        "defect_summary": {"long_hair": 1},
+        "film_type": "Unknown 35mm",
+        "film_age_years": 1,
+        "storage": "unknown",
+        "scan_resolution_dpi": 4000,
+    },
+    {
+        "name": "gt_in_distribution_scan1",
+        "defect_summary": {"dust": 868, "dirt": 401, "short_hair": 386, "long_hair": 122, "scratch": 1},
+        "film_type": "Kodak Portra 400 (35mm)",
+        "film_age_years": 2,
+        "storage": "fridge, sealed",
+        "scan_resolution_dpi": 4000,
+    },
+    {
+        "name": "minimal_synthetic_scratch",
+        "defect_summary": {"scratch": 1, "dust": 5},
+        "film_type": "Ilford HP5 (35mm)",
+        "film_age_years": 0,
+        "storage": "fresh",
+        "scan_resolution_dpi": 3200,
+    },
+]
+
+
+@app.local_entrypoint()
+def main(scenario: str = "all"):
+    """Run one or all scenarios through the reasoning model.
+
+    All scenarios in a single invocation share one container, so the model
+    is loaded once. Use `--scenario all` to run all 3 scenarios.
+    """
+    if scenario == "all":
+        scenarios = SCENARIOS
+    else:
+        scenarios = [s for s in SCENARIOS if s["name"] == scenario]
+    if not scenarios:
+        print(f"unknown scenario: {scenario}. available: {[s['name'] for s in SCENARIOS]}")
+        return
+
+    print(f"=== running {len(scenarios)} scenario(s) in one container ===")
+    results = run_reasoning_all.remote(scenarios)
+
+    print("===RESULT_START===")
+    print(json.dumps(results, indent=2))
+    print("===RESULT_END===")

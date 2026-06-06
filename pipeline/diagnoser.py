@@ -42,7 +42,7 @@ def diagnose(
         "Running Nemotron diagnosis (film=%s, age=%d, storage=%s, total_defects=%d)",
         film_type, film_age_years, storage, total,
     )
-    text = reasoner.generate(prompt=messages, system=SYSTEM_PROMPT)
+    text = reasoner.generate(messages=messages)
     elapsed = time.perf_counter() - started
 
     return {
