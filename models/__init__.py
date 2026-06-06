@@ -1,1 +1,1 @@
-"""Models package. Contains the vision and reasoning model wrappers."""
+"""Model package. Vision and reasoning model wrappers."""

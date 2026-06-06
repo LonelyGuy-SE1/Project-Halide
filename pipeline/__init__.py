@@ -1,1 +1,1 @@
-"""Pipeline package. End-to-end orchestration of vision and reasoning."""
+"""Pipeline package. Orchestrates vision + reasoning stages."""

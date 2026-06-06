@@ -1,1 +1,1 @@
-"""Vision model package. MiniCPM-V wrapper for defect detection."""
+"""Vision model package. MiniCPM-V 4.6 wrapper for film defect detection."""

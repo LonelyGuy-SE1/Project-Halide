@@ -1,1 +1,1 @@
-"""Storage package. SQLite database and caching."""
+"""Storage package. SQLite database and inference cache."""
