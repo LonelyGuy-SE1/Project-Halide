@@ -12,17 +12,21 @@ app = modal.App("halide-vision-training")
 # We also pin the git clone to the v0.9.5 release branch (not main) for reproducibility.
 image = (
     modal.Image.debian_slim(python_version="3.11")
-    .apt_install("git", "wget")
+    .apt_install("git", "wget", "cmake", "build-essential")
     .run_commands(
         "cd /root && git clone --depth 1 -b v0.9.5 https://github.com/hiyouga/LLaMA-Factory",
         "cd /root/LLaMA-Factory && pip install -e .",
         "cd /root/LLaMA-Factory && pip install -r requirements/metrics.txt",
+        "cd /root && git clone --depth 1 https://github.com/ggerganov/llama.cpp",
+        "cd /root/llama.cpp && pip install -r requirements/requirements-convert_hf_to_gguf.txt",
+        "cd /root/llama.cpp && cmake -B build && cmake --build build --config Release --target llama-quantize --target llama-cli -j4",
     )
     .pip_install(
         "transformers[torch]==5.7.0",
         "torchvision",
         "huggingface_hub",
         "datasets",
+        "gguf==0.19.0",
     )
 )
 
@@ -186,6 +190,7 @@ def export_model(
     output_dir: str = "/checkpoints/minicpm-v-4.6-merged",
 ):
     """Export LoRA checkpoint merged with base model."""
+    import os
     import subprocess
     from pathlib import Path
 
@@ -205,10 +210,13 @@ export_legacy_format: false
     with open(config_path, "w") as f:
         f.write(config_yaml.strip())
 
+    env = os.environ.copy()
+    env["DISABLE_VERSION_CHECK"] = "1"
     result = subprocess.run(
         ["llamafactory-cli", "export", str(config_path)],
         cwd="/root/LLaMA-Factory",
         capture_output=False,
+        env=env,
     )
 
     if result.returncode != 0:
@@ -220,7 +228,68 @@ export_legacy_format: false
     return output_dir
 
 
+@app.function(
+    image=image,
+    cpu=8,
+    volumes={"/checkpoints": checkpoint_volume},
+    timeout=1800,
+)
+def convert_and_quantize(
+    merged_path: str = "/checkpoints/minicpm-v-4.6-merged",
+    output_path: str = "/checkpoints/minicpm-v-4.6-q4km.gguf",
+):
+    """Convert merged HF model to GGUF, then quantize to Q4_K_M."""
+    import os
+    import subprocess
+
+    print("=== Converting HF to GGUF (FP16) ===")
+    result = subprocess.run(
+        [
+            "python",
+            "/root/llama.cpp/convert_hf_to_gguf.py",
+            merged_path,
+            "--outfile",
+            output_path + ".fp16",
+            "--outtype",
+            "f16",
+        ],
+        capture_output=False,
+    )
+    if result.returncode != 0:
+        print("GGUF conversion failed")
+        return None
+
+    print("=== Quantizing to Q4_K_M ===")
+    result = subprocess.run(
+        [
+            "/root/llama.cpp/build/bin/llama-quantize",
+            output_path + ".fp16",
+            output_path,
+            "Q4_K_M",
+        ],
+        capture_output=False,
+    )
+    if result.returncode != 0:
+        print("Quantization failed")
+        return None
+
+    # Cleanup intermediate fp16
+    if os.path.exists(output_path + ".fp16"):
+        os.remove(output_path + ".fp16")
+
+    checkpoint_volume.commit()
+    print(f"Final GGUF: {output_path}")
+    return output_path
+
+
 @app.local_entrypoint()
-def main():
-    """Run training locally or on Modal."""
-    train.remote()
+def main(epochs: int = 15, do_export: bool = True, do_quantize: bool = True):
+    """Run training (and optional export and quantize) on Modal."""
+    output = train.remote(epochs=epochs)
+    print(f"\nTraining output: {output}\n")
+    if do_export:
+        merged = export_model.remote()
+        print(f"\nMerged model: {merged}\n")
+    if do_quantize:
+        gguf = convert_and_quantize.remote()
+        print(f"\nGGUF: {gguf}\n")
