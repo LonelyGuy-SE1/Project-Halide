@@ -14,7 +14,12 @@ image = (
         "cd /root && git clone https://github.com/hiyouga/LLaMA-Factory",
         "cd /root/LLaMA-Factory && pip install -e '.[torch,metrics,deepspeed,minicpm_v]'",
     )
-    .pip_install("huggingface_hub", "datasets")
+    .pip_install(
+        "transformers[torch]>=5.7.0",
+        "torchvision",
+        "huggingface_hub",
+        "datasets",
+    )
 )
 
 # Volumes for data and checkpoints
