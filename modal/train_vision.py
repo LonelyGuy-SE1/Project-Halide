@@ -48,7 +48,7 @@ def train(
     learning_rate: float = 1e-5,
     lora_rank: int = 16,
     max_samples: int = 1000,
-    max_seq_length: int = 1024,
+    max_seq_length: int = 3072,
     output_dir: str = "/checkpoints/minicpm-v-4.6-lora",
 ):
     """
@@ -63,6 +63,7 @@ def train(
 
     print("=== Project Halide: Vision Model Training ===")
     print(f"GPU: A100-80GB | Epochs: {epochs} | LR: {learning_rate} | LoRA rank: {lora_rank}")
+    print(f"cutoff_len: 3072 (fits 150 defects * 17 tok/defect + ~600 image+system tokens)")
 
     # Step 1: Register dataset in LLaMA-Factory
     import json
