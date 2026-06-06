@@ -1,0 +1,10 @@
+# Project Halide Space Dependencies
+
+gradio==6.16.0
+torch==2.7.0
+torchvision==0.22.0
+transformers==5.7.0
+accelerate>=1.0.0
+huggingface_hub>=0.20.0
+pillow>=10.0.0
+numpy>=1.24.0
