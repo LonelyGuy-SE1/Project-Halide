@@ -11,7 +11,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("git", "wget")
     .run_commands(
-        "cd /root && git clone --depth 1 --branch v0.9.5 https://github.com/hiyouga/LLaMA-Factory",
+        "cd /root && git clone https://github.com/hiyouga/LLaMA-Factory",
         "cd /root/LLaMA-Factory && pip install -e '.[torch,metrics,deepspeed,minicpm_v]'",
     )
     .pip_install(
@@ -94,6 +94,21 @@ def train(
         shutil.copytree(scans_src, scans_dst, dirs_exist_ok=True)
 
     print("Copied data to LLaMA-Factory directory")
+
+    # Patch mm_plugin.py to handle missing image_sizes key
+    mm_plugin_path = Path("/root/LLaMA-Factory/src/llamafactory/data/mm_plugin.py")
+    with open(mm_plugin_path) as f:
+        content = f.read()
+
+    # The MiniCPMVPlugin.process_messages accesses mm_inputs["image_sizes"]
+    # but MiniCPMV4_6 processor may not return it. Add .get() fallback.
+    old_line = '            image_sizes = mm_inputs["image_sizes"]'
+    new_line = '            image_sizes = mm_inputs.get("image_sizes", mm_inputs.get("orig_sizes", []))  # patched'
+    if old_line in content and new_line not in content:
+        content = content.replace(old_line, new_line)
+        with open(mm_plugin_path, "w") as f:
+            f.write(content)
+        print("Patched mm_plugin.py for image_sizes fallback")
 
     # Step 3: Write YAML config (follows official OpenBMB example exactly)
     config_yaml = f"""
