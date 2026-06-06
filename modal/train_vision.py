@@ -53,10 +53,15 @@ def train(
     print(f"GPU: T4 | Epochs: {epochs} | LR: {learning_rate} | LoRA rank: {lora_rank}")
 
     # Step 1: Register dataset in LLaMA-Factory
-    dataset_info_path = Path("/root/LLaMA-Factory/data/dataset_info.json")
     import json
-    with open(dataset_info_path) as f:
-        dataset_info = json.load(f)
+    dataset_dir = Path("/root/LLaMA-Factory/data")
+    dataset_info_path = dataset_dir / "dataset_info.json"
+
+    if dataset_info_path.exists():
+        with open(dataset_info_path) as f:
+            dataset_info = json.load(f)
+    else:
+        dataset_info = {}
 
     dataset_info["halide_film_defects"] = {
         "file_name": "training_sharegpt.json",
@@ -97,6 +102,7 @@ lora_target: q_proj,v_proj
 lora_rank: {lora_rank}
 
 dataset: halide_film_defects
+dataset_dir: /root/LLaMA-Factory/data
 template: minicpm_v
 cutoff_len: {max_seq_length}
 max_samples: {max_samples}
@@ -129,6 +135,7 @@ output_dir: {output_dir}
     # Step 4: Run training
     result = subprocess.run(
         ["llamafactory-cli", "train", str(config_path)],
+        cwd="/root/LLaMA-Factory",
         capture_output=False,
     )
 
@@ -175,6 +182,7 @@ export_legacy_format: false
 
     result = subprocess.run(
         ["llamafactory-cli", "export", str(config_path)],
+        cwd="/root/LLaMA-Factory",
         capture_output=False,
     )
 
