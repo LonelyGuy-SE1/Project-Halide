@@ -52,6 +52,7 @@ def train(
     Follows the official OpenBMB LLaMA-Factory example.
     """
     import subprocess
+    import os
     from pathlib import Path
 
     print("=== Project Halide: Vision Model Training ===")
@@ -137,11 +138,14 @@ output_dir: {output_dir}
     print(f"Config written to {config_path}")
     print("Starting training...")
 
-    # Step 4: Run training
+    # Step 4: Run training (DISABLE_VERSION_CHECK for transformers 5.7+ compat)
+    env = os.environ.copy()
+    env["DISABLE_VERSION_CHECK"] = "1"
     result = subprocess.run(
         ["llamafactory-cli", "train", str(config_path)],
         cwd="/root/LLaMA-Factory",
         capture_output=False,
+        env=env,
     )
 
     if result.returncode != 0:
