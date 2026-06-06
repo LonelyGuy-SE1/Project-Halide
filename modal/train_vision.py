@@ -15,7 +15,7 @@ image = (
         "cd /root/LLaMA-Factory && pip install -e '.[torch,metrics,deepspeed,minicpm_v]'",
     )
     .pip_install(
-        "transformers[torch]>=5.7.0",
+        "transformers[torch]==5.7.0",
         "torchvision",
         "huggingface_hub",
         "datasets",
