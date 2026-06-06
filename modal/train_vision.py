@@ -11,7 +11,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("git", "wget")
     .run_commands(
-        "cd /root && git clone https://github.com/hiyouga/LLaMA-Factory",
+        "cd /root && git clone --depth 1 --branch v0.9.5 https://github.com/hiyouga/LLaMA-Factory",
         "cd /root/LLaMA-Factory && pip install -e '.[torch,metrics,deepspeed,minicpm_v]'",
     )
     .pip_install(
