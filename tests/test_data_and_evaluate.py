@@ -9,7 +9,12 @@ from PIL import Image
 from data.augmentation import OverlayDefect, augment_image
 from data.datasets import dataset_summary, load_jsonl, validate_entries
 from scripts.evaluate import evaluate_predictions
-from scripts.generate_v5_negative_curriculum import add_chemical_stain, make_example, row
+from scripts.generate_v5_negative_curriculum import (
+    add_chemical_stain,
+    add_crack_network,
+    make_example,
+    row,
+)
 from scripts.summarize_training_log import parse_metrics, summarize_metrics
 
 
@@ -186,6 +191,34 @@ def test_v5_negative_curriculum_generates_clean_and_stain_examples() -> None:
         "augmented/v5_negative_curriculum/images/example.jpg"
     ]
     assert "chemical_stain" in training_row["conversations"][1]["value"]
+
+
+def test_v5_negative_curriculum_generates_crack_focus_examples() -> None:
+    image, annotations = make_example(
+        1,
+        random.Random(789),
+        max_side=320,
+        clean=False,
+        crack_focus=True,
+    )
+    labels = {annotation["label"] for annotation in annotations}
+
+    assert image.size[0] <= 320
+    assert "scratch" in labels
+    assert "emulsion_damage" in labels
+
+    cracked, crack_annotations = add_crack_network(
+        Image.new("RGB", (320, 240), "gray"),
+        random.Random(987),
+    )
+    assert cracked.size == (320, 240)
+    assert any(annotation["label"] == "scratch" for annotation in crack_annotations)
+    assert any(annotation["label"] == "emulsion_damage" for annotation in crack_annotations)
+    assert all(
+        0.0 <= value <= 1.0
+        for annotation in crack_annotations
+        for value in annotation["bbox"]
+    )
 
 
 def test_training_log_summary() -> None:

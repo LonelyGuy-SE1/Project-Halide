@@ -39,16 +39,33 @@ def _subprocess_env() -> dict[str, str]:
 
 
 def _run(cmd: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        cmd,
-        cwd=str(REPO_ROOT),
-        env=_subprocess_env(),
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        capture_output=True,
-        timeout=timeout,
-    )
+    try:
+        return subprocess.run(
+            cmd,
+            cwd=str(REPO_ROOT),
+            env=_subprocess_env(),
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = _coerce_subprocess_text(exc.stdout)
+        stderr = _coerce_subprocess_text(exc.stderr)
+        raise RuntimeError(
+            f"command timed out after {timeout}s: {' '.join(cmd)}\n"
+            f"stdout tail:\n{stdout[-2000:]}\n"
+            f"stderr tail:\n{stderr[-4000:]}"
+        ) from exc
+
+
+def _coerce_subprocess_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
 
 
 def upload_to_modal(local_path: Path, *, volume: str, prefix: str) -> str:

@@ -257,6 +257,126 @@ def add_emulsion_damage(img: Image.Image, rng: random.Random) -> tuple[Image.Ima
     }
 
 
+def crack_path(
+    width: int,
+    height: int,
+    rng: random.Random,
+    *,
+    start: Point | None = None,
+    length_scale: float = 0.72,
+) -> list[Point]:
+    if start is None:
+        x0 = rng.uniform(-0.06, 1.02) * width
+        y0 = rng.uniform(-0.02, 0.94) * height
+    else:
+        x0, y0 = start
+    angle = rng.choice(
+        [
+            rng.uniform(-0.55, 0.55),
+            rng.uniform(1.0, 1.9),
+            rng.uniform(-1.9, -1.0),
+            rng.uniform(2.35, 3.65),
+        ]
+    )
+    length = rng.uniform(0.34, length_scale) * max(width, height)
+    points: list[Point] = []
+    segments = rng.randint(5, 9)
+    drift = rng.uniform(-0.22, 0.22)
+    for i in range(segments):
+        t = i / max(1, segments - 1)
+        bend = math.sin(t * math.pi * rng.uniform(0.7, 1.7)) * drift
+        local_angle = angle + bend + rng.uniform(-0.13, 0.13)
+        step = length * t
+        x = x0 + math.cos(local_angle) * step
+        y = y0 + math.sin(local_angle) * step
+        points.append((x, y))
+    return points
+
+
+def add_crack_network(img: Image.Image, rng: random.Random) -> tuple[Image.Image, list[dict]]:
+    """Add branching lifted-emulsion cracks seen in damaged negatives."""
+    width, height = img.size
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    annotations: list[dict] = []
+    all_points: list[Point] = []
+
+    trunk = crack_path(width, height, rng, length_scale=rng.uniform(0.65, 1.05))
+    paths = [trunk]
+    branch_count = rng.randint(3, 7)
+    for _ in range(branch_count):
+        anchor = rng.choice(trunk[1:-1])
+        paths.append(
+            crack_path(
+                width,
+                height,
+                rng,
+                start=anchor,
+                length_scale=rng.uniform(0.24, 0.58),
+            )
+        )
+
+    bright = rng.random() < 0.82
+    core = rng.randint(226, 255) if bright else rng.randint(0, 36)
+    halo = rng.randint(175, 235) if bright else rng.randint(28, 86)
+    for path in paths:
+        all_points.extend(path)
+        halo_width = rng.randint(10, 28)
+        core_width = max(3, halo_width // rng.randint(3, 5))
+        draw.line(
+            path,
+            fill=(halo, halo, halo, rng.randint(36, 82)),
+            width=halo_width,
+            joint="curve",
+        )
+        draw.line(
+            path,
+            fill=(core, core, core, rng.randint(165, 245)),
+            width=core_width,
+            joint="curve",
+        )
+        if rng.random() < 0.75:
+            offset = rng.uniform(3, 12)
+            fine = [(x + offset, y + rng.uniform(-6, 6)) for x, y in path]
+            draw.line(
+                fine,
+                fill=(core, core, core, rng.randint(80, 145)),
+                width=max(1, core_width // 2),
+                joint="curve",
+            )
+        annotations.append(
+            {"label": "scratch", "bbox": bbox(path, width, height, pad=24)}
+        )
+
+    shard_count = rng.randint(2, 5)
+    for _ in range(shard_count):
+        anchor = rng.choice(all_points)
+        radius_x = rng.uniform(0.05, 0.18) * width
+        radius_y = rng.uniform(0.035, 0.16) * height
+        polygon: list[Point] = []
+        sides = rng.randint(5, 9)
+        for i in range(sides):
+            angle = math.tau * i / sides + rng.uniform(-0.18, 0.18)
+            scale = rng.uniform(0.45, 1.2)
+            polygon.append(
+                (
+                    anchor[0] + math.cos(angle) * radius_x * scale,
+                    anchor[1] + math.sin(angle) * radius_y * scale,
+                )
+            )
+        tone = rng.choice([48, 210, 238, 18])
+        draw.polygon(polygon, fill=(tone, tone, tone, rng.randint(34, 86)))
+        annotations.append(
+            {
+                "label": "emulsion_damage",
+                "bbox": bbox(polygon, width, height, pad=18),
+            }
+        )
+
+    layer = layer.filter(ImageFilter.GaussianBlur(radius=rng.uniform(0.25, 0.9)))
+    return Image.alpha_composite(img.convert("RGBA"), layer).convert("RGB"), annotations
+
+
 def add_dirt(img: Image.Image, rng: random.Random) -> tuple[Image.Image, dict]:
     width, height = img.size
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -351,11 +471,31 @@ def add_light_leak(img: Image.Image, rng: random.Random) -> tuple[Image.Image, d
     }
 
 
-def make_example(index: int, rng: random.Random, max_side: int, clean: bool) -> tuple[Image.Image, list[dict]]:
+def make_example(
+    index: int,
+    rng: random.Random,
+    max_side: int,
+    clean: bool,
+    crack_focus: bool = False,
+) -> tuple[Image.Image, list[dict]]:
     img = make_base(rng, max_side=max_side)
     annotations: list[dict] = []
     if clean:
         return img, annotations
+
+    if crack_focus:
+        img, crack_annotations = add_crack_network(img, rng)
+        annotations.extend(crack_annotations)
+        if rng.random() < 0.45:
+            img, ann = add_chemical_stain(img, rng)
+            annotations.append(ann)
+        if rng.random() < 0.55:
+            img, ann = add_dirt(img, rng)
+            annotations.append(ann)
+        for _ in range(rng.randint(0, 3)):
+            img, ann = add_dust(img, rng)
+            annotations.append(ann)
+        return annotations_image_pair(img, annotations)
 
     if rng.random() < 0.62:
         img, cluster = add_scratch_cluster(img, rng)
@@ -380,6 +520,10 @@ def make_example(index: int, rng: random.Random, max_side: int, clean: bool) -> 
     if rng.random() < 0.12:
         img, ann = add_light_leak(img, rng)
         annotations.append(ann)
+    return annotations_image_pair(img, annotations)
+
+
+def annotations_image_pair(img: Image.Image, annotations: list[dict]) -> tuple[Image.Image, list[dict]]:
     return img, annotations[:24]
 
 
@@ -391,6 +535,10 @@ def main() -> int:
     parser.add_argument("--val-fraction", type=float, default=0.08)
     parser.add_argument("--max-side", type=int, default=1200)
     parser.add_argument("--seed", type=int, default=505)
+    parser.add_argument("--dataset-name", default="v5_negative_curriculum")
+    parser.add_argument("--image-prefix", default="v5")
+    parser.add_argument("--output-stem", default="v5")
+    parser.add_argument("--crack-focus-fraction", type=float, default=0.0)
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
@@ -402,21 +550,34 @@ def main() -> int:
     annotation_rows: list[dict] = []
     total = args.defect_count + args.clean_count
     clean_indices = set(rng.sample(range(total), args.clean_count))
+    defect_indices = [index for index in range(total) if index not in clean_indices]
+    crack_focus_total = int(
+        round(len(defect_indices) * clamp(args.crack_focus_fraction, 0.0, 1.0))
+    )
+    crack_focus_indices = set(rng.sample(defect_indices, crack_focus_total))
     for index in range(total):
         clean = index in clean_indices
-        img, annotations = make_example(index, rng, args.max_side, clean=clean)
-        image_name = f"v5_{index:05d}.jpg"
+        crack_focus = index in crack_focus_indices
+        img, annotations = make_example(
+            index,
+            rng,
+            args.max_side,
+            clean=clean,
+            crack_focus=crack_focus,
+        )
+        image_name = f"{args.image_prefix}_{index:05d}.jpg"
         image_path = image_dir / image_name
         img.save(image_path, "JPEG", quality=90)
-        image_ref = f"augmented/v5_negative_curriculum/images/{image_name}"
+        image_ref = f"augmented/{args.dataset_name}/images/{image_name}"
         records.append(row(image_ref, annotations))
         annotation_rows.append(
             {
-                "image": f"v5_negative_curriculum/images/{image_name}",
+                "image": f"{args.dataset_name}/images/{image_name}",
                 "annotations": annotations,
                 "width": img.width,
                 "height": img.height,
-                "source": "procedural_v5_negative_curriculum",
+                "source": f"procedural_{args.dataset_name}",
+                "crack_focus": crack_focus,
             }
         )
 
@@ -425,11 +586,14 @@ def main() -> int:
     val_rows = records[:val_count]
     train_rows = records[val_count:]
 
-    (out_dir / "training_sharegpt_v5.json").write_text(
+    train_name = f"training_sharegpt_{args.output_stem}.json"
+    val_name = f"training_sharegpt_val_{args.output_stem}.json"
+
+    (out_dir / train_name).write_text(
         json.dumps(train_rows, indent=2) + "\n",
         encoding="utf-8",
     )
-    (out_dir / "training_sharegpt_val_v5.json").write_text(
+    (out_dir / val_name).write_text(
         json.dumps(val_rows, indent=2) + "\n",
         encoding="utf-8",
     )
@@ -450,7 +614,10 @@ def main() -> int:
         "val_rows": len(val_rows),
         "defect_rows": len(records) - clean_rows,
         "clean_rows": clean_rows,
+        "crack_focus_rows": len(crack_focus_indices),
         "label_counts": dict(sorted(label_counts.items())),
+        "train_json": train_name,
+        "val_json": val_name,
         "seed": args.seed,
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")

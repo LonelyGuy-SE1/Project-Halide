@@ -1,10 +1,12 @@
 import json
+import subprocess
 
 from PIL import Image
 
 from scripts.run_private_negative_eval import (
     RESULT_END,
     RESULT_START,
+    _run,
     clean_model_result,
     parse_modal_stdout,
     select_model_result,
@@ -20,6 +22,29 @@ def test_parse_modal_stdout_extracts_marked_json():
     )
 
     assert parsed == payload
+
+
+def test_run_timeout_includes_subprocess_output(monkeypatch):
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(
+            cmd=args[0],
+            timeout=3,
+            output="stdout clue",
+            stderr="stderr clue",
+        )
+
+    monkeypatch.setattr("scripts.run_private_negative_eval.subprocess.run", fake_run)
+
+    try:
+        _run(["modal", "run", "broken.py"], timeout=3)
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected timeout RuntimeError")
+
+    assert "command timed out after 3s" in message
+    assert "stdout clue" in message
+    assert "stderr clue" in message
 
 
 def test_select_model_result_uses_finetuned_result_for_both():
