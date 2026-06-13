@@ -13,7 +13,7 @@ Layout:
   [ Status / timing / ground-truth counts ]
 
 Run:
-  python tests/view_inference.py
+  python scripts/view_inference.py
 """
 from __future__ import annotations
 

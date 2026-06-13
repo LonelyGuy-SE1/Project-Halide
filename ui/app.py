@@ -143,6 +143,26 @@ def _running_button_state() -> tuple[Any, str, Any]:
     )
 
 
+def pipeline_error_html(exc: Exception) -> str:
+    text = str(exc)
+    lower = text.lower()
+    if "no cuda gpu" in lower or "cuda" in lower or "gpu" in lower:
+        title = "GPU unavailable"
+        body = (
+            "The diagnosis needs a live GPU slot. Please retry in a moment, "
+            "or run the app on a GPU-backed Space."
+        )
+    else:
+        title = "Pipeline error"
+        body = text or "The diagnostic pipeline stopped unexpectedly."
+    return (
+        '<div class="halide-panel" style="border-color: var(--halide-red);">'
+        f'<div class="halide-section-title" style="color: var(--halide-red);">'
+        f"{html.escape(title)}</div>"
+        f"<p class=\"halide-muted\">{html.escape(body)}</p></div>"
+    )
+
+
 @_gpu_decorator()
 def run_pipeline(
     image: Any,
@@ -174,6 +194,7 @@ def run_pipeline(
             logger.info("Returning cached diagnosis")
             result = cached
         else:
+            progress(0.05, "Loading GPU models if needed...")
             progress(0.1, "Stage 1/2: running vision defect extraction...")
             result = run_diagnosis(
                 image=pil_image,
@@ -233,13 +254,7 @@ def run_pipeline(
         )
     except Exception as exc:  # pragma: no cover
         logger.exception("Pipeline failed")
-        err = (
-            '<div class="halide-panel" style="border-color: var(--halide-red);">'
-            f'<div class="halide-section-title" style="color: var(--halide-red);">'
-            f"Pipeline error</div>"
-            f"<pre style=\"color: var(--halide-text); white-space: pre-wrap;\">"
-            f"{html.escape(str(exc))}</pre></div>"
-        )
+        err = pipeline_error_html(exc)
         selected_entry, selector_update, history_rows = _history_state()
         hidden_html = gr.update(value="", visible=False)
         return (

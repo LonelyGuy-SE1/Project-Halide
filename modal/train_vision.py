@@ -2,7 +2,7 @@
 Modal training script for MiniCPM-V 4.6 using LLaMA-Factory.
 Follows official OpenBMB documentation exactly.
 
-Current v4 defaults:
+Current defaults:
   - lora_rank: 64
   - lora_alpha: 128
   - lora_target: q_proj,v_proj,k_proj,o_proj (vision tower + language)
@@ -89,7 +89,7 @@ def train(
     import os
     from pathlib import Path
 
-    print("=== Project Halide: Vision Model Training v4 ===")
+    print("=== Project Halide: Vision Model Training ===")
     print(f"GPU: A100-80GB | Epochs: {epochs} | LR: {learning_rate}")
     print(f"LoRA: rank={lora_rank}, alpha={lora_alpha}, target={lora_target}")
     print(f"cutoff_len: {max_seq_length} (fits 150 defects in int 0-999 format)")
@@ -143,20 +143,37 @@ def train(
 
     # Step 2: Copy data to LLaMA-Factory data directory
     import shutil
+
+    def _copy_referenced_images(json_paths: list[Path], target_root: Path) -> int:
+        image_refs: set[str] = set()
+        for json_path in json_paths:
+            with open(json_path, encoding="utf-8") as f:
+                rows = json.load(f)
+            for row in rows:
+                for image_ref in row.get("images", []):
+                    image_refs.add(str(image_ref).replace("\\", "/").lstrip("/"))
+
+        copied = 0
+        for image_ref in sorted(image_refs):
+            source = Path("/data") / image_ref
+            target = target_root / image_ref
+            if not source.exists():
+                print(f"Warning: referenced image missing: {source}")
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+            copied += 1
+        return copied
+
     shutil.copy(train_json_path, str(dataset_dir / train_json_name))
     shutil.copy(val_json_path, str(dataset_dir / val_json_name))
 
-    scans_src = Path("/data/scans")
-    scans_dst = Path("/root/LLaMA-Factory/data/scans")
-    if scans_src.exists():
-        shutil.copytree(scans_src, scans_dst, dirs_exist_ok=True)
+    copied_images = _copy_referenced_images(
+        [Path(train_json_path), Path(val_json_path)],
+        dataset_dir,
+    )
 
-    augmented_src = Path("/data/augmented")
-    augmented_dst = Path("/root/LLaMA-Factory/data/augmented")
-    if augmented_src.exists():
-        shutil.copytree(augmented_src, augmented_dst, dirs_exist_ok=True)
-
-    print("Copied data to LLaMA-Factory directory")
+    print(f"Copied data to LLaMA-Factory directory ({copied_images} images)")
 
     # Step 3: Write YAML config
     config_yaml = f"""
@@ -291,6 +308,7 @@ export_legacy_format: false
 def main(
     epochs: int = 8,
     do_export: bool = True,
+    learning_rate: float = 1e-5,
     train_json_path: str = "/data/augmented/training_sharegpt_combined_v4.json",
     val_json_path: str = "/data/training_sharegpt_val_v4.json",
     output_dir: str = "/checkpoints/minicpm-v-4.6-lora-v4-stage1",
@@ -304,6 +322,7 @@ def main(
     """
     output = train.remote(
         epochs=epochs,
+        learning_rate=learning_rate,
         train_json_path=train_json_path,
         val_json_path=val_json_path,
         output_dir=output_dir,
@@ -324,10 +343,11 @@ def main(
 @app.local_entrypoint()
 def spawn_train(
     epochs: int = 8,
+    learning_rate: float = 1e-5,
     train_json_path: str = "/data/augmented/training_sharegpt_combined_v4.json",
     val_json_path: str = "/data/training_sharegpt_val_v4.json",
     output_dir: str = "/checkpoints/minicpm-v-4.6-lora-v4-stage1",
-    resume_from_checkpoint: str = "auto",
+    resume_from_checkpoint: str = "",
 ):
     """Start training as a detached Modal function call.
 
@@ -336,6 +356,7 @@ def spawn_train(
     """
     call = train.spawn(
         epochs=epochs,
+        learning_rate=learning_rate,
         train_json_path=train_json_path,
         val_json_path=val_json_path,
         output_dir=output_dir,

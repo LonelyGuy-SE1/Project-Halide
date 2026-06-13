@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 
 from PIL import Image
@@ -8,6 +9,7 @@ from PIL import Image
 from data.augmentation import OverlayDefect, augment_image
 from data.datasets import dataset_summary, load_jsonl, validate_entries
 from scripts.evaluate import evaluate_predictions
+from scripts.generate_v5_negative_curriculum import add_chemical_stain, make_example, row
 from scripts.summarize_training_log import parse_metrics, summarize_metrics
 
 
@@ -160,6 +162,30 @@ def test_augment_image_generates_valid_annotations(tmp_path) -> None:
     assert image.size == (100, 100)
     assert annotations[0]["label"] == "scratch"
     assert all(0.0 <= v <= 1.0 for v in annotations[0]["bbox"])
+
+
+def test_v5_negative_curriculum_generates_clean_and_stain_examples() -> None:
+    rng = random.Random(123)
+    clean_image, clean_annotations = make_example(0, rng, max_side=240, clean=True)
+    assert clean_image.size[0] <= 240
+    assert clean_annotations == []
+
+    stained, annotation = add_chemical_stain(
+        Image.new("RGB", (240, 160), "gray"),
+        random.Random(456),
+    )
+    assert stained.size == (240, 160)
+    assert annotation["label"] == "chemical_stain"
+    assert all(0.0 <= value <= 1.0 for value in annotation["bbox"])
+
+    training_row = row(
+        "augmented/v5_negative_curriculum/images/example.jpg",
+        [annotation],
+    )
+    assert training_row["images"] == [
+        "augmented/v5_negative_curriculum/images/example.jpg"
+    ]
+    assert "chemical_stain" in training_row["conversations"][1]["value"]
 
 
 def test_training_log_summary() -> None:

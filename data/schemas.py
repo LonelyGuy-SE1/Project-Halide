@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -18,7 +19,6 @@ ALLOWED_LABELS = frozenset(
     }
 )
 
-MIN_DEFECT_CONFIDENCE = 0.35
 DEDUP_IOU_THRESHOLD = 0.72
 
 LABEL_DISPLAY_NAMES = {
@@ -44,6 +44,17 @@ DEFECT_CLASSES_KNOWN = {
 }
 
 BBox = tuple[float, float, float, float]
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+SUBJECT_HAIR_CONFIDENCE_MAX = 0.5
+MIN_DEFECT_CONFIDENCE = _env_float("HALIDE_MIN_DEFECT_CONFIDENCE", 0.45)
 
 
 @dataclass(frozen=True)
@@ -133,7 +144,36 @@ def validate_defect(raw: Any, min_confidence: float = MIN_DEFECT_CONFIDENCE) -> 
             confidence = None
     if confidence is not None and confidence < min_confidence:
         return None
+    if is_likely_subject_hair(label, bbox, confidence):
+        return None
     return Defect(label=label, bbox=bbox, confidence=confidence)
+
+
+def is_likely_subject_hair(
+    label: str,
+    bbox: BBox,
+    confidence: float | None,
+) -> bool:
+    """Drop central hair-like subject detail before it reaches diagnosis."""
+    if label not in {"long_hair", "short_hair"}:
+        return False
+    if confidence is not None and confidence >= SUBJECT_HAIR_CONFIDENCE_MAX:
+        return False
+
+    x_min, y_min, x_max, y_max = bbox
+    width = x_max - x_min
+    height = y_max - y_min
+    if width <= 0 or height <= 0:
+        return False
+
+    aspect_ratio = max(width / height, height / width)
+    fully_inside_subject_zone = (
+        x_min > 0.16
+        and x_max < 0.84
+        and y_min > 0.10
+        and y_max < 0.90
+    )
+    return fully_inside_subject_zone and aspect_ratio >= 7.5
 
 
 def clean_defects(

@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from PIL import Image
 
-from data.schemas import bbox_iou, clean_defects, dedupe_defects, normalize_bbox
+from data.schemas import (
+    MIN_DEFECT_CONFIDENCE,
+    bbox_iou,
+    clean_defects,
+    dedupe_defects,
+    normalize_bbox,
+)
+from models.vision.prompts import DETECTION_PROMPT_INT
+from scripts.convert_to_sharegpt import SYSTEM_PROMPT_INT
 from models.vision.minicpm_wrapper import DETECTION_PROMPT
 from models.vision import inference
 from models.vision.minicpm_wrapper import _parse_defect_json
@@ -68,6 +76,34 @@ def test_detection_prompt_rejects_non_film_content() -> None:
     assert "grass" in DETECTION_PROMPT
     assert "emulsion_damage" in DETECTION_PROMPT
     assert '{"defects": []}' in DETECTION_PROMPT
+
+
+def test_detection_prompt_has_one_source_of_truth() -> None:
+    assert DETECTION_PROMPT == DETECTION_PROMPT_INT
+    assert SYSTEM_PROMPT_INT == DETECTION_PROMPT_INT
+
+
+def test_clean_defects_drops_central_subject_hair_like_false_positive() -> None:
+    cleaned, dropped = clean_defects(
+        [
+            {
+                "label": "long_hair",
+                "bbox": [250, 400, 750, 460],
+            },
+            {
+                "label": "long_hair",
+                "bbox": [0, 400, 900, 430],
+            },
+        ]
+    )
+    assert dropped == 1
+    assert cleaned == [
+        {"label": "long_hair", "bbox": [0.0, 0.4004, 0.900901, 0.43043]}
+    ]
+
+
+def test_min_defect_confidence_default_is_production_strict() -> None:
+    assert MIN_DEFECT_CONFIDENCE >= 0.45
 
 
 def test_bbox_iou() -> None:

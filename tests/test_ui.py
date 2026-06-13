@@ -156,3 +156,11 @@ def test_metadata_confidence_normalization() -> None:
     assert ui_app.normalize_metadata_confidence("High, verified") == "high"
     assert ui_app.normalize_metadata_confidence("Medium, partly verified") == "medium"
     assert ui_app.normalize_metadata_confidence(None) == "low"
+
+
+def test_pipeline_error_html_uses_friendly_gpu_message() -> None:
+    rendered = ui_app.pipeline_error_html(RuntimeError("no CUDA GPU is visible"))
+
+    assert "GPU unavailable" in rendered
+    assert "RuntimeError" not in rendered
+    assert "no CUDA GPU" not in rendered

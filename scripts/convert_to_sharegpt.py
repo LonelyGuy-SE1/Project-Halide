@@ -33,6 +33,8 @@ import random
 from collections import defaultdict
 from pathlib import Path
 
+from models.vision.prompts import DETECTION_PROMPT_FLOAT, DETECTION_PROMPT_INT
+
 
 INPUT_JSONL = Path(__file__).parent.parent / "data" / "training_data.jsonl"
 OUTPUT_TRAIN = Path(__file__).parent.parent / "data" / "training_sharegpt.json"
@@ -50,54 +52,8 @@ RANDOM_SEED = 42
 DEFAULT_HOLDOUT = ["Scan (8).jpg", "Scan (9).jpg"]
 
 
-SYSTEM_PROMPT_INT = (
-    "You are a film defect detection engine. Analyze the film scan and detect "
-    "only physical defects that are on the film, scanner glass, holder, or "
-    "scan surface. The image may be a positive film scan of an ordinary scene, "
-    "a negative, a slide, a contact sheet, or a film scanner output. Detect "
-    "defects that appear as dust spots, dirt blobs, thin abrasion lines, "
-    "hair-like overlays, emulsion loss, chemical stains, or light leaks on "
-    "top of the photographed content. If no clear "
-    "surface artifact is visible, return {\"defects\": []}. Do not label "
-    "subject matter as defects. Do not label grass, tree branches, eyelashes, "
-    "fabric fibers, texture, grain, wires, shadows, printed text, or real hair "
-    "inside the photographed scene as long_hair or short_hair. Use scratch "
-    "only for thin physical abrasion or scan-surface lines, not object edges, "
-    "stems, typography, or composition lines. Output a JSON object with a "
-    "'defects' array. Each defect has: "
-    "'label' (dust, dirt, scratch, long_hair, short_hair, emulsion_damage, "
-    "chemical_stain, light_leak), "
-    "optional 'confidence' from 0.0 to 1.0, "
-    "'bbox' as 4 integers in the [0, 999] grid "
-    "[x_min, y_min, x_max, y_max] (multiply by image width/height to get pixels). "
-    "Return at most 150 defects. Prefer the clearest defects. Do not repeat "
-    "the same label and bbox. If uncertain, return an empty defects array. "
-    "Output JSON only, no explanation."
-)
-
-SYSTEM_PROMPT_FLOAT = (
-    "You are a film defect detection engine. Analyze the film scan and detect "
-    "only physical defects that are on the film, scanner glass, holder, or "
-    "scan surface. The image may be a positive film scan of an ordinary scene, "
-    "a negative, a slide, a contact sheet, or a film scanner output. Detect "
-    "defects that appear as dust spots, dirt blobs, thin abrasion lines, "
-    "hair-like overlays, emulsion loss, chemical stains, or light leaks on "
-    "top of the photographed content. If no clear "
-    "surface artifact is visible, return {\"defects\": []}. Do not label "
-    "subject matter as defects. Do not label grass, tree branches, eyelashes, "
-    "fabric fibers, texture, grain, wires, shadows, printed text, or real hair "
-    "inside the photographed scene as long_hair or short_hair. Use scratch "
-    "only for thin physical abrasion or scan-surface lines, not object edges, "
-    "stems, typography, or composition lines. Output a JSON object with a "
-    "'defects' array. Each defect has: "
-    "'label' (dust, dirt, scratch, long_hair, short_hair, emulsion_damage, "
-    "chemical_stain, light_leak), "
-    "optional 'confidence' from 0.0 to 1.0, "
-    "'bbox' (normalized [x_min, y_min, x_max, y_max] from 0.0 to 1.0). "
-    "Return at most 150 defects. Prefer the clearest defects. Do not repeat "
-    "the same label and bbox. If uncertain, return an empty defects array. "
-    "Output JSON only, no explanation."
-)
+SYSTEM_PROMPT_INT = DETECTION_PROMPT_INT
+SYSTEM_PROMPT_FLOAT = DETECTION_PROMPT_FLOAT
 
 
 def cap_defects(annotations: list, max_count: int) -> list:

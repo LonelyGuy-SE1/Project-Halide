@@ -107,8 +107,11 @@ available. The app also exposes an optional `gr.Server` builder at
 ## Dataset And Training
 
 Current training data combines FilmDamageSimulator annotations with generated
-v4 hard negatives and procedural film-defect positives. The user-supplied
-negative samples are held out for evaluation and are not used for training.
+procedural film-defect positives and hard clean negatives. The v5 curriculum
+adds analog-negative scratch clusters, broad emulsion damage, chemical stains,
+dirt, dust, light leaks, and clean subject-hair or grass counterexamples. The
+user-supplied negative samples are held out for evaluation and are not used for
+training.
 
 ```bash
 python scripts/download_datasets.py
@@ -119,12 +122,13 @@ python scripts/convert_to_sharegpt.py --input data/augmented/augmented_training.
 python scripts/generate_v4_synthetic_dataset.py --count 720 --clean-count 160 --max-side 1200 --base-mode procedural
 python scripts/convert_to_sharegpt.py --input data/augmented/v4_synthetic/v4_synthetic_training.jsonl --output-train data/augmented/training_sharegpt_synthetic_v4.json --output-val data/augmented/training_sharegpt_synthetic_val_v4.json --image-prefix augmented --no-val --format int_0_999
 python scripts/combine_sharegpt.py --out data/augmented/training_sharegpt_combined_v4.json data/training_sharegpt_v4.json data/augmented/training_sharegpt_augmented_v4.json data/augmented/training_sharegpt_synthetic_v4.json
+python scripts/generate_v5_negative_curriculum.py --defect-count 768 --clean-count 192 --val-fraction 0.08 --max-side 1120 --seed 606
 ```
 
 Fine-tune on Modal:
 
 ```bash
-modal run modal/train_vision.py::main --epochs 8 --do-export --train-json-path /data/augmented/training_sharegpt_combined_v4.json --val-json-path /data/training_sharegpt_val_v4.json --output-dir /checkpoints/minicpm-v-4.6-lora-v4-stage1 --merged-output-dir /checkpoints/minicpm-v-4.6-merged-v4-stage1
+modal run modal/train_vision.py::main --epochs 8 --do-export --learning-rate 0.0001 --train-json-path /data/augmented/v5_negative_curriculum/training_sharegpt_v5.json --val-json-path /data/augmented/v5_negative_curriculum/training_sharegpt_val_v5.json --output-dir /checkpoints/minicpm-v-4.6-lora-v5-negative-curriculum --merged-output-dir /checkpoints/minicpm-v-4.6-merged-v5-negative-curriculum
 ```
 
 For long runs on an unreliable local connection, deploy the Modal app and
@@ -132,20 +136,20 @@ spawn the training function from the deployed app:
 
 ```bash
 modal deploy modal/train_vision.py --name halide-vision-training-v4
-python scripts/spawn_modal_training.py
+python scripts/spawn_modal_training.py --epochs 8 --learning-rate 0.0001 --train-json-path /data/augmented/v5_negative_curriculum/training_sharegpt_v5.json --val-json-path /data/augmented/v5_negative_curriculum/training_sharegpt_val_v5.json --output-dir /checkpoints/minicpm-v-4.6-lora-v5-negative-curriculum
 ```
 
 Publish the merged checkpoint:
 
 ```bash
-modal run modal/upload_model.py::main --model-dir /checkpoints/minicpm-v-4.6-merged-v4-stage1 --repo-id Lonelyguyse1/halide-vision --no-private
+modal run modal/upload_model.py::main --model-dir /checkpoints/minicpm-v-4.6-merged-v5-negative-curriculum --repo-id Lonelyguyse1/halide-vision --no-private
 ```
 
 Convert and publish the llama.cpp GGUF artifact:
 
 ```bash
-modal run modal/convert_gguf.py::main --model-dir /checkpoints/minicpm-v-4.6-merged-v4-stage1 --outfile /checkpoints/minicpm-v-4.6-merged-v4-stage1-f16.gguf --quantized-outfile /checkpoints/minicpm-v-4.6-merged-v4-stage1-q4_k_m.gguf
-modal run modal/upload_model.py::file --local-path /checkpoints/minicpm-v-4.6-merged-v4-stage1-q4_k_m.gguf --repo-id Lonelyguyse1/halide-vision --path-in-repo minicpm-v-4.6-merged-v4-stage1-q4_k_m.gguf
+modal run modal/convert_gguf.py::main --model-dir /checkpoints/minicpm-v-4.6-merged-v5-negative-curriculum --outfile /checkpoints/minicpm-v-4.6-merged-v5-negative-curriculum-f16.gguf --quantized-outfile /checkpoints/minicpm-v-4.6-merged-v5-negative-curriculum-q4_k_m.gguf
+modal run modal/upload_model.py::file --local-path /checkpoints/minicpm-v-4.6-merged-v5-negative-curriculum-q4_k_m.gguf --repo-id Lonelyguyse1/halide-vision --path-in-repo minicpm-v-4.6-merged-v5-negative-curriculum-q4_k_m.gguf
 ```
 
 ## Evaluation
@@ -169,7 +173,7 @@ Run private held-out negatives through Modal GPU inference after a merged
 checkpoint exists:
 
 ```bash
-python scripts/run_private_negative_eval.py --model /checkpoints/minicpm-v-4.6-merged-v4-stage1
+python scripts/run_private_negative_eval.py --model /checkpoints/minicpm-v-4.6-merged-v5-negative-curriculum
 ```
 
 The five private user negatives stay in `.nottracked` and are not used for
