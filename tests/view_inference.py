@@ -195,6 +195,9 @@ _LABEL_STYLE = {
     "scratch":    ((255, 70, 70), 3),     # red, thicker (structural)
     "long_hair":  ((180, 100, 255), 2),   # purple
     "short_hair": ((100, 200, 255), 2),   # light blue
+    "emulsion_damage": ((226, 232, 240), 3),
+    "chemical_stain": ((22, 163, 74), 3),
+    "light_leak": ((244, 114, 182), 3),
 }
 _DEFAULT_STYLE = ((255, 255, 255), 2)
 
@@ -388,7 +391,7 @@ def _make_runner(gt_map):
                 "base_raw": base_raw,
                 "base_parsed": json.dumps(base_parsed, indent=2) if base_parsed else "{}",
                 "ft_overlay": ft_overlay,
-                "ft_status": _format_status("Finetuned (`halide-vision v3`)", None, ft_info),
+                "ft_status": _format_status("Finetuned (`halide-vision v4 stage1`)", None, ft_info),
                 "ft_raw": ft_raw,
                 "ft_parsed": json.dumps(ft_parsed, indent=2) if ft_parsed else "{}",
                 "gt_panel": _format_gt(fname, gt_map),
@@ -437,7 +440,7 @@ def main():
             input_img = gr.Image(type="pil", label="Input (no boxes)", height=320, interactive=False)
             gt_overlay = gr.Image(type="pil", label="GT overlay (in-dist only)", height=320, interactive=False)
             base_overlay = gr.Image(type="pil", label="Base + boxes", height=320, interactive=False)
-            ft_overlay = gr.Image(type="pil", label="Finetuned v3 + boxes", height=320, interactive=False)
+            ft_overlay = gr.Image(type="pil", label="Finetuned v4 + boxes", height=320, interactive=False)
 
         with gr.Row():
             base_status = gr.Markdown(value="_base not run_")

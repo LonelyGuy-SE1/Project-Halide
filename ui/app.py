@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 import gradio as gr
+from PIL import Image, ImageDraw, ImageFont
 
 from config import get_app_config
 from data.preprocessing import draw_defects, image_to_png_bytes, load_image
@@ -16,6 +17,7 @@ from storage.database import get_diagnosis, init_db, list_recent, record_diagnos
 from ui.components import (
     EMPTY_STATE,
     HEADER_HTML,
+    REPORT_EMPTY_STATE,
     confidence_notice_html,
     defect_table_rows,
     defect_pills_html,
@@ -26,6 +28,7 @@ from ui.components import (
     metadata_html,
     render_history,
     raw_json_text,
+    run_state_html,
     stats_html,
 )
 from ui.theme import THEME_CSS, build_theme
@@ -95,6 +98,75 @@ def _history_state(
     return render_history(entries), selected, gr.update(choices=choices, value=value), history_table_rows(entries)
 
 
+def _empty_outputs(
+    message: str = "Awaiting scan.",
+) -> tuple[Any, Any, str, str, str, str, str, str, str, list[list[str]], str, str, Any, list[list[str]]]:
+    history_html, selected_entry, selector_update, history_rows = _history_state()
+    empty = f'<p class="halide-muted">{html.escape(message)}</p>'
+    hidden_html = gr.update(value="", visible=False)
+    return (
+        None,
+        gr.update(value=[], visible=False),
+        run_state_html(None),
+        empty,
+        empty,
+        hidden_html,
+        hidden_html,
+        "",
+        "{}",
+        [],
+        history_html,
+        history_detail_html(selected_entry),
+        selector_update,
+        history_rows,
+    )
+
+
+def _review_gallery(pil_image: Any, annotated: Any) -> list[tuple[Any, str]]:
+    return [
+        (pil_image, "Original scan"),
+        (annotated, "Validated overlay"),
+    ]
+
+
+def _placeholder_image() -> Image.Image:
+    image = Image.new("RGB", (1200, 760), (5, 5, 5))
+    draw = ImageDraw.Draw(image)
+    frame = (28, 28, 1172, 732)
+    draw.rectangle(frame, outline=(68, 62, 52), width=2)
+    draw.rectangle((48, 48, 1152, 712), outline=(28, 27, 25), width=1)
+    try:
+        font = ImageFont.load_default(size=32)
+        small = ImageFont.load_default(size=18)
+    except TypeError:
+        font = ImageFont.load_default()
+        small = font
+    title = "Awaiting scan"
+    subtitle = "Validated overlay will appear here"
+    title_box = draw.textbbox((0, 0), title, font=font)
+    subtitle_box = draw.textbbox((0, 0), subtitle, font=small)
+    center_x = image.width // 2
+    center_y = image.height // 2
+    draw.text(
+        (center_x - (title_box[2] - title_box[0]) // 2, center_y - 26),
+        title,
+        fill=(243, 234, 219),
+        font=font,
+    )
+    draw.text(
+        (center_x - (subtitle_box[2] - subtitle_box[0]) // 2, center_y + 18),
+        subtitle,
+        fill=(169, 155, 136),
+        font=small,
+    )
+    return image
+
+
+def _placeholder_pair() -> tuple[Image.Image, Image.Image]:
+    placeholder = _placeholder_image()
+    return placeholder, placeholder.copy()
+
+
 @_gpu_decorator()
 def run_pipeline(
     image: Any,
@@ -104,25 +176,10 @@ def run_pipeline(
     scan_dpi: int,
     metadata_confidence: str = "low",
     progress: gr.Progress = gr.Progress(),
-) -> tuple[Any, str, str, str, str, str, str, list[list[str]], str, str, Any, list[list[str]]]:
+) -> tuple[Any, Any, str, str, str, str, str, str, str, list[list[str]], str, str, Any, list[list[str]]]:
     """Gradio handler for the diagnose button."""
-    history_html, selected_entry, selector_update, history_rows = _history_state()
     if image is None:
-        empty = '<p class="halide-muted">No image provided.</p>'
-        return (
-            None,
-            empty,
-            empty,
-            empty,
-            empty,
-            empty,
-            "{}",
-            [],
-            history_html,
-            history_detail_html(selected_entry),
-            selector_update,
-            history_rows,
-        )
+        return _empty_outputs("No image provided.")
 
     try:
         progress(0.0, "Hashing image for cache lookup...")
@@ -168,16 +225,23 @@ def run_pipeline(
             title=f"Halide: {len(defects)} validated defects",
         )
         image_pair = (pil_image, annotated)
+        gallery = gr.update(value=_review_gallery(pil_image, annotated), visible=True)
+        run_state = run_state_html(result)
         stats = stats_html(result)
         notice = confidence_notice_html(result)
-        pills = defect_pills_html(counts)
-        diag = diagnosis_html(result.get("diagnosis", {}).get("diagnosis_text", ""))
+        pills = gr.update(value=defect_pills_html(counts), visible=True)
+        diag = gr.update(
+            value=diagnosis_html(result.get("diagnosis", {}).get("diagnosis_text", "")),
+            visible=True,
+        )
         meta = metadata_html(result)
         raw_json = raw_json_text(result)
         table_rows = defect_table_rows(result)
         history, selected_entry, selector_update, history_rows = _history_state(result.get("diagnosis_id"))
         return (
             image_pair,
+            gallery,
+            run_state,
             stats,
             notice,
             pills,
@@ -200,12 +264,15 @@ def run_pipeline(
             f"{html.escape(str(exc))}</pre></div>"
         )
         history, selected_entry, selector_update, history_rows = _history_state()
+        hidden_html = gr.update(value="", visible=False)
         return (
             None,
+            gr.update(value=[], visible=False),
+            err,
             err,
             "",
-            "",
-            "",
+            hidden_html,
+            hidden_html,
             "",
             "{}",
             [],
@@ -247,11 +314,15 @@ def build_app() -> gr.Blocks:
         gr.HTML(HEADER_HTML)
 
         with gr.Row(elem_classes="halide-workbench", equal_height=False):
-            with gr.Column(scale=3, min_width=320, elem_classes="halide-intake-panel"):
+            with gr.Column(scale=2, min_width=300, elem_classes="halide-intake-panel"):
+                gr.HTML(
+                    '<div class="halide-panel-title">Scan intake</div>'
+                    '<p class="halide-rail-copy">Metadata is context, visible evidence is primary.</p>'
+                )
                 image_input = gr.Image(
                     label="Film scan",
                     type="pil",
-                    height=330,
+                    height=300,
                     sources=["upload", "clipboard"],
                     buttons=["download", "fullscreen"],
                     elem_classes="halide-upload",
@@ -292,30 +363,54 @@ def build_app() -> gr.Blocks:
                     size="lg",
                     elem_id="halide-run-button",
                 )
+                gr.HTML(
+                    '<div class="halide-model-card">'
+                    '<span>Runtime</span>'
+                    '<strong>Open weights, GPU only</strong>'
+                    '<p>MiniCPM-V extracts evidence. Nemotron writes the lab report.</p>'
+                    "</div>"
+                )
 
-            with gr.Column(scale=7, min_width=560, elem_classes="halide-main-stage"):
-                with gr.Row(elem_classes="halide-status-band", equal_height=True):
-                    notice_output = gr.HTML(value=EMPTY_STATE, elem_classes="halide-status-cell")
-                    defect_summary = gr.HTML(value=EMPTY_STATE, elem_classes="halide-status-cell")
+            with gr.Column(scale=6, min_width=560, elem_classes="halide-main-stage"):
+                run_state_output = gr.HTML(value=run_state_html(None))
 
                 with gr.Group(elem_classes="halide-lighttable"):
-                    gr.HTML('<div class="halide-section-title">Light table</div>')
+                    gr.HTML(
+                        '<div class="halide-section-header">'
+                        '<div><span>Light table</span><strong>Original versus validated overlay</strong></div>'
+                        '<small>Review</small>'
+                        "</div>"
+                    )
                     compare_output = gr.ImageSlider(
+                        value=_placeholder_pair(),
                         label="Original / overlay",
                         type="pil",
-                        height="58vh",
+                        height="54vh",
                         max_height=760,
                         slider_position=52,
                         interactive=False,
                         buttons=["download", "fullscreen"],
+                        elem_id="halide-compare",
+                    )
+                    review_gallery = gr.Gallery(
+                        value=[],
+                        label="Review frames",
+                        columns=2,
+                        rows=1,
+                        height=220,
+                        allow_preview=True,
+                        object_fit="contain",
+                        buttons=["download", "fullscreen"],
+                        elem_classes="halide-review-gallery",
+                        visible=False,
                     )
 
-                with gr.Group(elem_classes="halide-diagnosis-panel"):
-                    gr.HTML('<div class="halide-section-title">Diagnosis and physical fixes</div>')
-                    diagnosis_output = gr.HTML(value=EMPTY_STATE)
-
-            with gr.Column(scale=3, min_width=360, elem_classes="halide-inspector"):
-                with gr.Tabs(selected="evidence", elem_classes="halide-inspector-tabs"):
+            with gr.Column(scale=3, min_width=390, elem_classes="halide-inspector"):
+                with gr.Tabs(selected="report", elem_classes="halide-inspector-tabs"):
+                    with gr.Tab("Report", id="report"):
+                        notice_output = gr.HTML(value=REPORT_EMPTY_STATE)
+                        defect_summary = gr.HTML(value="", visible=False)
+                        diagnosis_output = gr.HTML(value="", visible=False)
                     with gr.Tab("Evidence", id="evidence"):
                         stats_output = gr.HTML(value=EMPTY_STATE)
                         metadata_output = gr.HTML(value=EMPTY_STATE)
@@ -370,7 +465,12 @@ def build_app() -> gr.Blocks:
             "Vision: MiniCPM-V 4.6. Reasoning: Nemotron-Mini-4B-Instruct.</footer>"
         )
 
-        run_btn.click(
+        run_event = run_btn.click(
+            fn=lambda: gr.update(interactive=False, value="Diagnosing..."),
+            outputs=[run_btn],
+            queue=False,
+        )
+        run_event.then(
             fn=run_pipeline,
             inputs=[
                 image_input,
@@ -382,6 +482,8 @@ def build_app() -> gr.Blocks:
             ],
             outputs=[
                 compare_output,
+                review_gallery,
+                run_state_output,
                 stats_output,
                 notice_output,
                 defect_summary,
@@ -394,6 +496,10 @@ def build_app() -> gr.Blocks:
                 history_select,
                 history_table,
             ],
+        ).then(
+            fn=lambda: gr.update(interactive=True, value="Diagnose scan"),
+            outputs=[run_btn],
+            queue=False,
         )
         refresh_btn.click(
             fn=refresh_history,
@@ -414,8 +520,12 @@ def main() -> None:
     app.queue(max_size=8).launch(
         server_name="0.0.0.0",
         server_port=7860,
+        show_error=True,
         theme=build_theme(),
         css=THEME_CSS,
+        allowed_paths=["assets"],
+        favicon_path="assets/logo.jpg",
+        max_file_size="60mb",
     )
 
 

@@ -127,17 +127,25 @@ Fine-tune on Modal:
 modal run modal/train_vision.py::main --epochs 8 --do-export --train-json-path /data/augmented/training_sharegpt_combined_v4.json --val-json-path /data/training_sharegpt_val_v4.json --output-dir /checkpoints/minicpm-v-4.6-lora-v4-stage1 --merged-output-dir /checkpoints/minicpm-v-4.6-merged-v4-stage1
 ```
 
+For long runs on an unreliable local connection, deploy the Modal app and
+spawn the training function from the deployed app:
+
+```bash
+modal deploy modal/train_vision.py --name halide-vision-training-v4
+python scripts/spawn_modal_training.py
+```
+
 Publish the merged checkpoint:
 
 ```bash
-modal run modal/upload_model.py::main --model-dir /checkpoints/minicpm-v-4.6-merged-v3 --repo-id Lonelyguyse1/halide-vision --no-private
+modal run modal/upload_model.py::main --model-dir /checkpoints/minicpm-v-4.6-merged-v4-stage1 --repo-id Lonelyguyse1/halide-vision --no-private
 ```
 
 Convert and publish the llama.cpp GGUF artifact:
 
 ```bash
-modal run modal/convert_gguf.py::main
-modal run modal/upload_model.py::file --local-path /checkpoints/minicpm-v-4.6-merged-v3-q4_k_m.gguf --repo-id Lonelyguyse1/halide-vision --path-in-repo minicpm-v-4.6-merged-v3-q4_k_m.gguf
+modal run modal/convert_gguf.py::main --model-dir /checkpoints/minicpm-v-4.6-merged-v4-stage1 --outfile /checkpoints/minicpm-v-4.6-merged-v4-stage1-f16.gguf --quantized-outfile /checkpoints/minicpm-v-4.6-merged-v4-stage1-q4_k_m.gguf
+modal run modal/upload_model.py::file --local-path /checkpoints/minicpm-v-4.6-merged-v4-stage1-q4_k_m.gguf --repo-id Lonelyguyse1/halide-vision --path-in-repo minicpm-v-4.6-merged-v4-stage1-q4_k_m.gguf
 ```
 
 ## Evaluation
@@ -156,6 +164,27 @@ Prediction JSONL format:
 
 The evaluator reports per-class precision, recall, F1, false positives, false
 negatives, and IoU-backed matching.
+
+Run private held-out negatives through Modal GPU inference after a merged
+checkpoint exists:
+
+```bash
+python scripts/run_private_negative_eval.py --model /checkpoints/minicpm-v-4.6-merged-v4-stage1
+```
+
+The five private user negatives stay in `.nottracked` and are not used for
+training data.
+
+## Space Bundle
+
+Prepare the private Space upload directory:
+
+```bash
+python scripts/prepare_space_bundle.py
+```
+
+The bundle contains only runtime code, selected `data/` helpers, assets, a slim
+requirements file, and the Space README metadata.
 
 ## Current Status
 

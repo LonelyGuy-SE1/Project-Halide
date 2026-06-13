@@ -9,6 +9,13 @@ from ui.components import diagnosis_html, history_row_html
 
 def test_html_renderers_escape_model_and_user_text() -> None:
     assert "<script>" not in diagnosis_html("<script>alert(1)</script>")
+    rendered = diagnosis_html(
+        "## Root cause\nTransport scratch.\n\n"
+        "## Physical fixes\n1. Re-scan a crop.\n2. Inspect under a loupe."
+    )
+    assert "## Root cause" not in rendered
+    assert "halide-report-section" in rendered
+    assert "<li>Re-scan a crop.</li>" in rendered
     row = history_row_html(
         {
             "film_type": "<b>bad</b>",
@@ -57,6 +64,8 @@ def test_run_pipeline_with_stubbed_diagnosis(monkeypatch, tmp_path) -> None:
     image = Image.new("RGB", (64, 64), "black")
     (
         image_pair,
+        review_gallery,
+        run_state,
         stats,
         notice,
         pills,
@@ -79,9 +88,14 @@ def test_run_pipeline_with_stubbed_diagnosis(monkeypatch, tmp_path) -> None:
     original, annotated = image_pair
     assert original.size == (64, 64)
     assert annotated.size == (64, 64)
-    assert "Scratch" in pills
-    assert "<strong>1</strong>" in pills
-    assert "Transport scratch" in diagnosis
+    assert len(review_gallery["value"]) == 2
+    assert review_gallery["visible"] is True
+    assert "validated defect" in run_state
+    assert pills["visible"] is True
+    assert "Scratch" in pills["value"]
+    assert "<strong>1</strong>" in pills["value"]
+    assert diagnosis["visible"] is True
+    assert "Transport scratch" in diagnosis["value"]
     assert "Ilford HP5" in metadata
     assert '"model_path": "vision-stub"' in raw_json
     assert '"metadata_confidence": "low"' in raw_json

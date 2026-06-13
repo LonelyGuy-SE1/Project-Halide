@@ -2,16 +2,16 @@
 Modal training script for MiniCPM-V 4.6 using LLaMA-Factory.
 Follows official OpenBMB documentation exactly.
 
-Per log.txt directive (2026-06-06):
+Current v4 defaults:
   - lora_rank: 64
   - lora_alpha: 128
   - lora_target: q_proj,v_proj,k_proj,o_proj (vision tower + language)
-  - num_train_epochs: 50
+  - num_train_epochs: 8
   - bbox format: integer [0, 999] grid (aligned with VLM pre-training)
 """
 import modal
 
-app = modal.App("halide-vision-training-v2")
+app = modal.App("halide-vision-training-v4")
 
 # Container image with all dependencies
 image = (
@@ -47,7 +47,7 @@ checkpoint_volume = modal.Volume.from_name("halide-checkpoints", create_if_missi
         "/checkpoints": checkpoint_volume,
     },
     secrets=[modal.Secret.from_name("huggingface-secret")],
-    timeout=2 * 3600,
+    timeout=8 * 3600,
     retries=modal.Retries(initial_delay=0, max_retries=2),
 )
 def train(
@@ -62,6 +62,7 @@ def train(
     output_dir: str = "/checkpoints/minicpm-v-4.6-lora-v2",
     train_json_path: str = "/data/training_sharegpt.json",
     val_json_path: str = "/data/training_sharegpt_val.json",
+    resume_from_checkpoint: str = "",
 ):
     """
     Run LoRA fine-tuning on MiniCPM-V 4.6 with vision tower targeting.
@@ -71,7 +72,7 @@ def train(
       - target q_proj,v_proj,k_proj,o_proj (covers both SigLIP2-400M vision
         tower and Qwen3.5-0.8B language backbone; both module types share
         these names)
-      - 50 epochs
+      - 8 epochs by default for stage-one v4
       - integer [0, 999] bbox grid format
 
     Note on early stopping: LLaMA-Factory v0.9.5's HfArgumentParser rejects
@@ -88,13 +89,21 @@ def train(
     import os
     from pathlib import Path
 
-    print("=== Project Halide: Vision Model Training v2 ===")
+    print("=== Project Halide: Vision Model Training v4 ===")
     print(f"GPU: A100-80GB | Epochs: {epochs} | LR: {learning_rate}")
     print(f"LoRA: rank={lora_rank}, alpha={lora_alpha}, target={lora_target}")
     print(f"cutoff_len: {max_seq_length} (fits 150 defects in int 0-999 format)")
     print(f"train_json_path: {train_json_path}")
     print(f"val_json_path: {val_json_path}")
     print(f"Best-model-at-end: enabled, save + eval strategy: epoch")
+    if resume_from_checkpoint == "auto":
+        checkpoints = sorted(
+            Path(output_dir).glob("checkpoint-*"),
+            key=lambda p: int(p.name.split("-")[-1]) if p.name.split("-")[-1].isdigit() else -1,
+        )
+        resume_from_checkpoint = str(checkpoints[-1]) if checkpoints else ""
+    if resume_from_checkpoint:
+        print(f"resume_from_checkpoint: {resume_from_checkpoint}")
 
     # Step 1: Register both train and val datasets in LLaMA-Factory
     import json
@@ -198,6 +207,8 @@ eval_strategy: epoch
 
 output_dir: {output_dir}
 """
+    if resume_from_checkpoint:
+        config_yaml += f"\nresume_from_checkpoint: {resume_from_checkpoint}\n"
 
     config_path = Path("/root/LLaMA-Factory/train_config.yaml")
     with open(config_path, "w") as f:
@@ -278,23 +289,25 @@ export_legacy_format: false
 
 @app.local_entrypoint()
 def main(
-    epochs: int = 50,
+    epochs: int = 8,
     do_export: bool = True,
-    train_json_path: str = "/data/training_sharegpt.json",
-    val_json_path: str = "/data/training_sharegpt_val.json",
-    output_dir: str = "/checkpoints/minicpm-v-4.6-lora-v2",
-    merged_output_dir: str = "/checkpoints/minicpm-v-4.6-merged-v2",
+    train_json_path: str = "/data/augmented/training_sharegpt_combined_v4.json",
+    val_json_path: str = "/data/training_sharegpt_val_v4.json",
+    output_dir: str = "/checkpoints/minicpm-v-4.6-lora-v4-stage1",
+    merged_output_dir: str = "/checkpoints/minicpm-v-4.6-merged-v4-stage1",
+    resume_from_checkpoint: str = "",
 ):
     """Run training (and optional export) on Modal A100-80GB.
 
-    Per log.txt (2026-06-06) directive: rank 64, alpha 128, vision tower
-    targets, 50 epochs, best model selected by eval loss.
+    Current default is the v4 stage-one dataset and eight epochs. Longer runs
+    can still be launched by passing --epochs.
     """
     output = train.remote(
         epochs=epochs,
         train_json_path=train_json_path,
         val_json_path=val_json_path,
         output_dir=output_dir,
+        resume_from_checkpoint=resume_from_checkpoint,
     )
     print(f"\nTraining output: {output}\n")
     if output is None:
@@ -309,9 +322,41 @@ def main(
 
 
 @app.local_entrypoint()
+def spawn_train(
+    epochs: int = 8,
+    train_json_path: str = "/data/augmented/training_sharegpt_combined_v4.json",
+    val_json_path: str = "/data/training_sharegpt_val_v4.json",
+    output_dir: str = "/checkpoints/minicpm-v-4.6-lora-v4-stage1",
+    resume_from_checkpoint: str = "auto",
+):
+    """Start training as a detached Modal function call.
+
+    Use this for long training runs when the local network is unreliable.
+    The returned call id can be checked later with `get_train_result`.
+    """
+    call = train.spawn(
+        epochs=epochs,
+        train_json_path=train_json_path,
+        val_json_path=val_json_path,
+        output_dir=output_dir,
+        resume_from_checkpoint=resume_from_checkpoint,
+    )
+    print(f"Spawned training call: {call.object_id}")
+    print(f"Dashboard: {call.get_dashboard_url()}")
+
+
+@app.local_entrypoint()
+def get_train_result(call_id: str, timeout_seconds: int = 5):
+    """Check a detached training call and print the result when complete."""
+    function_call = modal.FunctionCall.from_id(call_id)
+    result = function_call.get(timeout=timeout_seconds)
+    print(f"Training result: {result}")
+
+
+@app.local_entrypoint()
 def export_only(
-    checkpoint_path: str = "/checkpoints/minicpm-v-4.6-lora-v3",
-    output_dir: str = "/checkpoints/minicpm-v-4.6-merged-v3",
+    checkpoint_path: str = "/checkpoints/minicpm-v-4.6-lora-v4-stage1",
+    output_dir: str = "/checkpoints/minicpm-v-4.6-merged-v4-stage1",
 ):
     """Export an already-trained LoRA checkpoint without retraining."""
     merged = export_model.remote(

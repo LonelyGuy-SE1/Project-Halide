@@ -59,8 +59,9 @@ PROMPT = (
 
 MODELS = {
     "base": "openbmb/MiniCPM-V-4.6",
-    # v3 finetune, combined original + balanced augmented data.
-    "finetuned": "/checkpoints/minicpm-v-4.6-merged-v3",
+    # v4 finetune, combined original + hard-negative procedural data.
+    "finetuned": "/checkpoints/minicpm-v-4.6-merged-v4-stage1",
+    "finetuned_v4_stage1": "/checkpoints/minicpm-v-4.6-merged-v4-stage1",
 }
 
 
@@ -135,12 +136,12 @@ def _parse_defect_fragments(text: str) -> list[dict]:
     return fragments
 
 
-def _inference_for(model_key: str, image_path: str) -> dict:
+def _inference_for(model_key: str, image_path: str, model_id_override: str | None = None) -> dict:
     from PIL import Image
     import torch
     from transformers import AutoModelForImageTextToText, AutoProcessor
 
-    model_id = MODELS[model_key]
+    model_id = model_id_override or MODELS[model_key]
     t0 = time.time()
     processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
     dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
@@ -200,28 +201,48 @@ def run_finetuned(image_path: str) -> dict:
     secrets=[modal.Secret.from_name("huggingface-secret")],
     timeout=15 * 60,
 )
-def run_both(image_path: str) -> dict:
+def run_model(image_path: str, model_id: str) -> dict:
+    return _inference_for("custom", f"/uploads/{image_path}", model_id_override=model_id)
+
+
+@app.function(
+    image=image,
+    gpu="T4",
+    volumes={"/uploads": viewer_volume, "/checkpoints": checkpoint_volume},
+    secrets=[modal.Secret.from_name("huggingface-secret")],
+    timeout=15 * 60,
+)
+def run_both(image_path: str, finetuned_model: str = MODELS["finetuned"]) -> dict:
     """Run both models in the same container (one cold load, two inferences)."""
     out: dict[str, Any] = {"image_path": image_path, "results": {}}
-    for key in ("base", "finetuned"):
-        out["results"][key] = _inference_for(key, f"/uploads/{image_path}")
+    out["results"]["base"] = _inference_for("base", f"/uploads/{image_path}")
+    out["results"]["finetuned"] = _inference_for(
+        "finetuned",
+        f"/uploads/{image_path}",
+        model_id_override=finetuned_model,
+    )
     return out
 
 
 @app.local_entrypoint()
-def main(image_path: str = "viewer_smoke_01.png", which: str = "both"):
+def main(
+    image_path: str = "viewer_smoke_01.png",
+    which: str = "both",
+    finetuned_model: str = MODELS["finetuned"],
+):
     """Local entrypoint: invoke run_both / run_base / run_finetuned and print JSON.
 
     Usage:
       modal run modal/view_inference.py::main --image-path X.png --which both
+      modal run modal/view_inference.py::main --image-path X.png --which finetuned --finetuned-model /checkpoints/minicpm-v-4.6-merged-v4-stage1
     """
     import json as _json
     if which == "both":
-        r = run_both.remote(image_path)
+        r = run_both.remote(image_path, finetuned_model)
     elif which == "base":
         r = run_base.remote(image_path)
     elif which == "finetuned":
-        r = run_finetuned.remote(image_path)
+        r = run_model.remote(image_path, finetuned_model)
     else:
         raise SystemExit(f"unknown --which: {which}")
     print("===RESULT_START===")

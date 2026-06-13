@@ -21,6 +21,9 @@ def main() -> None:
         show_error=True,
         theme=build_theme(),
         css=THEME_CSS,
+        allowed_paths=["assets"],
+        favicon_path="assets/logo.jpg",
+        max_file_size="60mb",
     )
 
 

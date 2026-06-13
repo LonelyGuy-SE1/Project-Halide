@@ -30,9 +30,9 @@ checkpoint_volume = modal.Volume.from_name("halide-checkpoints", create_if_missi
     timeout=2 * 3600,
 )
 def convert_to_gguf(
-    model_dir: str = "/checkpoints/minicpm-v-4.6-merged-v3",
-    outfile: str = "/checkpoints/minicpm-v-4.6-merged-v3-f16.gguf",
-    quantized_outfile: str = "/checkpoints/minicpm-v-4.6-merged-v3-q4_k_m.gguf",
+    model_dir: str = "/checkpoints/minicpm-v-4.6-merged-v4-stage1",
+    outfile: str = "/checkpoints/minicpm-v-4.6-merged-v4-stage1-f16.gguf",
+    quantized_outfile: str = "/checkpoints/minicpm-v-4.6-merged-v4-stage1-q4_k_m.gguf",
 ) -> dict:
     import json
     import shutil
@@ -113,9 +113,9 @@ def convert_to_gguf(
 
 @app.local_entrypoint()
 def main(
-    model_dir: str = "/checkpoints/minicpm-v-4.6-merged-v3",
-    outfile: str = "/checkpoints/minicpm-v-4.6-merged-v3-f16.gguf",
-    quantized_outfile: str = "/checkpoints/minicpm-v-4.6-merged-v3-q4_k_m.gguf",
+    model_dir: str = "/checkpoints/minicpm-v-4.6-merged-v4-stage1",
+    outfile: str = "/checkpoints/minicpm-v-4.6-merged-v4-stage1-f16.gguf",
+    quantized_outfile: str = "/checkpoints/minicpm-v-4.6-merged-v4-stage1-q4_k_m.gguf",
 ):
     result = convert_to_gguf.remote(
         model_dir=model_dir,

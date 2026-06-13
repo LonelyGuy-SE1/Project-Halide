@@ -20,7 +20,7 @@ checkpoint_volume = modal.Volume.from_name("halide-checkpoints", create_if_missi
     timeout=3600,
 )
 def upload_merged_model(
-    model_dir: str = "/checkpoints/minicpm-v-4.6-merged-v3",
+    model_dir: str = "/checkpoints/minicpm-v-4.6-merged-v4-stage1",
     repo_id: str = "Lonelyguyse1/halide-vision",
     private: bool = False,
 ) -> str:
@@ -38,7 +38,7 @@ def upload_merged_model(
         folder_path=str(path),
         repo_id=repo_id,
         repo_type="model",
-        commit_message="Upload Halide MiniCPM-V 4.6 v3 merged checkpoint",
+        commit_message=f"Upload Halide MiniCPM-V 4.6 merged checkpoint from {path.name}",
         ignore_patterns=["*.tmp", "optimizer.pt", "scheduler.pt"],
     )
     return repo_id
@@ -51,9 +51,9 @@ def upload_merged_model(
     timeout=3600,
 )
 def upload_checkpoint_file(
-    local_path: str = "/checkpoints/minicpm-v-4.6-merged-v3-q4_k_m.gguf",
+    local_path: str = "/checkpoints/minicpm-v-4.6-merged-v4-stage1-q4_k_m.gguf",
     repo_id: str = "Lonelyguyse1/halide-vision",
-    path_in_repo: str = "minicpm-v-4.6-merged-v3-q4_k_m.gguf",
+    path_in_repo: str = "minicpm-v-4.6-merged-v4-stage1-q4_k_m.gguf",
 ) -> str:
     from pathlib import Path
 
@@ -75,7 +75,7 @@ def upload_checkpoint_file(
 
 @app.local_entrypoint()
 def main(
-    model_dir: str = "/checkpoints/minicpm-v-4.6-merged-v3",
+    model_dir: str = "/checkpoints/minicpm-v-4.6-merged-v4-stage1",
     repo_id: str = "Lonelyguyse1/halide-vision",
     private: bool = False,
 ):
@@ -89,9 +89,9 @@ def main(
 
 @app.local_entrypoint()
 def file(
-    local_path: str = "/checkpoints/minicpm-v-4.6-merged-v3-q4_k_m.gguf",
+    local_path: str = "/checkpoints/minicpm-v-4.6-merged-v4-stage1-q4_k_m.gguf",
     repo_id: str = "Lonelyguyse1/halide-vision",
-    path_in_repo: str = "minicpm-v-4.6-merged-v3-q4_k_m.gguf",
+    path_in_repo: str = "minicpm-v-4.6-merged-v4-stage1-q4_k_m.gguf",
 ):
     uploaded = upload_checkpoint_file.remote(
         local_path=local_path,

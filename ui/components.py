@@ -2,19 +2,36 @@
 
 from __future__ import annotations
 
+import base64
 import html
 import json
 import time
+from pathlib import Path
+import re
 from typing import Iterable
 
 from data.schemas import LABEL_DISPLAY_NAMES
 
 
-HEADER_HTML = """
+def _logo_html() -> str:
+    path = Path(__file__).resolve().parents[1] / "assets" / "logo.jpg"
+    if not path.exists():
+        return '<span class="halide-brand-mark halide-brand-mark-text">H</span>'
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return (
+        '<img class="halide-brand-mark" '
+        f'src="data:image/jpeg;base64,{encoded}" alt="" />'
+    )
+
+
+HEADER_HTML = f"""
 <div id="halide-header">
   <div class="halide-brand-lockup">
-    <span class="halide-kicker">Project Halide</span>
-    <h1>Analog Film Diagnostic Workbench</h1>
+    {_logo_html()}
+    <div>
+      <span class="halide-kicker">Project Halide</span>
+      <h1>Analog Film Diagnostic Workbench</h1>
+    </div>
   </div>
   <div class="halide-model-strip">
     <a href="https://huggingface.co/Lonelyguyse1" target="_blank" rel="noreferrer">Lonelyguyse1</a>
@@ -26,6 +43,21 @@ HEADER_HTML = """
 """
 
 EMPTY_STATE = '<p class="halide-muted">Awaiting scan.</p>'
+REPORT_EMPTY_STATE = (
+    '<div class="halide-empty-card">'
+    '<span>Report</span>'
+    '<strong>No scan analyzed yet</strong>'
+    '<p>Results, evidence counts, and physical fixes will appear here after a GPU run.</p>'
+    "</div>"
+)
+
+REPORT_SECTIONS = {
+    "root cause": "Root cause",
+    "evidence": "Evidence",
+    "physical fixes": "Physical fixes",
+    "confidence": "Confidence",
+    "next inspection": "Next inspection",
+}
 
 
 def defect_pills_html(label_counts: dict[str, int]) -> str:
@@ -88,9 +120,12 @@ def stats_html(result: dict) -> str:
     rows.append(_stat_row("Vision inference", f"{vision_s:.2f}s"))
     rows.append(_stat_row("Reasoning", f"{reasoning_s:.2f}s"))
     rows.append(_stat_row("Total", f"{total:.2f}s"))
-    rows.append(_stat_row("Vision model", _truncate(defects.get("model_path", ""), 50)))
-    rows.append(_stat_row("Reasoning model", _truncate(diagnosis.get("model_path", ""), 50)))
-    return f'<div class="halide-stats">{"".join(rows)}</div>'
+    rows.append(_stat_row("Vision model", _truncate(defects.get("model_path", ""), 46)))
+    rows.append(_stat_row("Reasoning model", _truncate(diagnosis.get("model_path", ""), 46)))
+    return (
+        '<div class="halide-panel-title">Run telemetry</div>'
+        f'<div class="halide-stats">{"".join(rows)}</div>'
+    )
 
 
 def _stat_row(label: str, value: str) -> str:
@@ -109,9 +144,101 @@ def _truncate(s: str, n: int) -> str:
 
 
 def diagnosis_html(text: str) -> str:
-    """Wrap diagnosis text in the styled card."""
-    safe = html.escape(text or "(no diagnosis produced)").replace("\n", "<br>")
-    return f'<div class="halide-diagnosis">{safe}</div>'
+    """Render the Nemotron Markdown report into structured HTML."""
+    return render_markdown_report(text or "(no diagnosis produced)")
+
+
+def render_markdown_report(text: str) -> str:
+    """Render the constrained diagnosis Markdown used by Nemotron.
+
+    This intentionally supports only the report shapes we request from the
+    model: section headings, paragraphs, bullets, and numbered fixes.
+    """
+    sections: list[dict[str, list[str] | str]] = []
+    current: dict[str, list[str] | str] = {
+        "title": "Report",
+        "lines": [],
+    }
+
+    for raw_line in text.replace("\r\n", "\n").split("\n"):
+        line = raw_line.strip()
+        if line.startswith("## "):
+            if current["lines"]:
+                sections.append(current)
+            title_key = line[3:].strip().lower()
+            current = {
+                "title": REPORT_SECTIONS.get(title_key, line[3:].strip() or "Report"),
+                "lines": [],
+            }
+            continue
+        current["lines"].append(line)
+    if current["lines"] or not sections:
+        sections.append(current)
+
+    rendered = []
+    for section in sections:
+        title = html.escape(str(section["title"]))
+        body = _render_report_lines(section["lines"])  # type: ignore[arg-type]
+        rendered.append(
+            '<section class="halide-report-section">'
+            f'<div class="halide-report-heading">{title}</div>'
+            f'<div class="halide-report-body">{body}</div>'
+            "</section>"
+        )
+    return '<div class="halide-report">' + "".join(rendered) + "</div>"
+
+
+def _render_report_lines(lines: list[str]) -> str:
+    blocks: list[str] = []
+    paragraph: list[str] = []
+    bullet_items: list[str] = []
+    ordered_items: list[str] = []
+
+    def flush_paragraph() -> None:
+        if paragraph:
+            blocks.append(
+                "<p>"
+                + " ".join(html.escape(part) for part in paragraph if part)
+                + "</p>"
+            )
+            paragraph.clear()
+
+    def flush_bullets() -> None:
+        if bullet_items:
+            items = "".join(f"<li>{item}</li>" for item in bullet_items)
+            blocks.append(f"<ul>{items}</ul>")
+            bullet_items.clear()
+
+    def flush_ordered() -> None:
+        if ordered_items:
+            items = "".join(f"<li>{item}</li>" for item in ordered_items)
+            blocks.append(f"<ol>{items}</ol>")
+            ordered_items.clear()
+
+    for line in lines:
+        if not line:
+            flush_paragraph()
+            flush_bullets()
+            flush_ordered()
+            continue
+        numbered = re.match(r"^\d+\.\s+(.*)$", line)
+        if line.startswith("- "):
+            flush_paragraph()
+            flush_ordered()
+            bullet_items.append(html.escape(line[2:].strip()))
+        elif numbered:
+            flush_paragraph()
+            flush_bullets()
+            ordered_items.append(html.escape(numbered.group(1).strip()))
+        else:
+            flush_bullets()
+            flush_ordered()
+            paragraph.append(line)
+
+    flush_paragraph()
+    flush_bullets()
+    flush_ordered()
+    return "".join(blocks) or '<p class="halide-muted">No report text.</p>'
 
 
 def metadata_html(result: dict) -> str:
@@ -125,7 +252,10 @@ def metadata_html(result: dict) -> str:
         _stat_row("Scan DPI", str(meta.get("scan_resolution_dpi", "unknown"))),
         _stat_row("Metadata confidence", confidence.title()),
     ]
-    return f'<div class="halide-stats compact">{"".join(rows)}</div>'
+    return (
+        '<div class="halide-panel-title">Film dossier</div>'
+        f'<div class="halide-stats compact">{"".join(rows)}</div>'
+    )
 
 
 def confidence_notice_html(result: dict) -> str:
@@ -150,6 +280,40 @@ def confidence_notice_html(result: dict) -> str:
         message = "Schema validation passed for the visible defect evidence."
         tone = "good"
     return f'<div class="halide-notice {tone}">{html.escape(message)}</div>'
+
+
+def run_state_html(result: dict | None) -> str:
+    """Render a top-level status block for the current diagnosis."""
+    if not result:
+        return (
+            '<div class="halide-run-state idle">'
+            '<span class="halide-run-eyebrow">Ready</span>'
+            "<strong>Load a scan to begin inspection.</strong>"
+            "</div>"
+        )
+
+    defects = result.get("defects", {}) or {}
+    count = int(defects.get("defect_count", 0) or 0)
+    dropped = int(defects.get("dropped_count", 0) or 0)
+    duplicates = int(defects.get("duplicate_count", 0) or 0)
+    if count:
+        title = f"{count} validated defect{'s' if count != 1 else ''}"
+        tone = "active"
+    else:
+        title = "No validated defects"
+        tone = "quiet"
+
+    detail = (
+        f"{dropped} invalid removed, {duplicates} duplicate removed, "
+        f"{float(result.get('total_seconds', 0.0) or 0.0):.2f}s total"
+    )
+    return (
+        f'<div class="halide-run-state {tone}">'
+        '<span class="halide-run-eyebrow">Current scan</span>'
+        f"<strong>{html.escape(title)}</strong>"
+        f"<span>{html.escape(detail)}</span>"
+        "</div>"
+    )
 
 
 def history_label(entry: dict) -> str:
@@ -259,6 +423,7 @@ def raw_json_text(result_or_entry: dict | None) -> str:
 __all__ = [
     "HEADER_HTML",
     "EMPTY_STATE",
+    "REPORT_EMPTY_STATE",
     "compact_label_counts",
     "confidence_notice_html",
     "defect_table_rows",
@@ -269,7 +434,9 @@ __all__ = [
     "history_label",
     "history_table_rows",
     "metadata_html",
+    "render_markdown_report",
     "render_history",
+    "run_state_html",
     "raw_json_text",
     "stats_html",
 ]

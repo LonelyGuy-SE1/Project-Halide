@@ -13,7 +13,10 @@ from huggingface_hub import HfApi, create_repo
 
 REPO_ID = os.getenv("HALIDE_UPLOAD_REPO_ID", "Lonelyguyse1/halide-vision")
 LOCAL_DIR = Path(
-    "C:/Users/Admin/Desktop/Methuselah/Projects/Project-Halide/checkpoints/minicpm-v-4.6-merged-v3"
+    os.getenv(
+        "HALIDE_UPLOAD_LOCAL_DIR",
+        "checkpoints/minicpm-v-4.6-merged-v4-stage1",
+    )
 )
 
 

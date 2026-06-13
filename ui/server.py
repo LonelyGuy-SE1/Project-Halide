@@ -32,6 +32,9 @@ def build_server(blocks: gr.Blocks | None = None) -> gr.Server:
         theme=build_theme(),
         css=THEME_CSS,
         show_error=True,
+        allowed_paths=["assets"],
+        favicon_path="assets/logo.jpg",
+        max_file_size="60mb",
     )
     return server
 

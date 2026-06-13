@@ -4,52 +4,74 @@ from __future__ import annotations
 
 import gradio as gr
 
-OXIDE = "#c96f36"
-OXIDE_DEEP = "#8f3f27"
-AMBER = "#f6c85f"
-GREEN = "#6ee7b7"
-VIOLET = "#a78bfa"
-RED = "#ef4444"
+BRASS = "#c59a52"
+BRASS_DARK = "#8a6431"
+COPPER = "#b85f3f"
+TEAL = "#66d4c1"
+VIOLET = "#9d8cff"
+RED = "#ef5d52"
 
-INK = "#0b0a08"
-SURFACE = "#151311"
-SURFACE_SOFT = "#1d1916"
-SURFACE_LIFT = "#27211c"
-PAPER = "#f6efe2"
-MUTED = "#b9afa2"
-BORDER = "#3b332b"
-BLACK = "#050403"
+INK = "#0a0a0a"
+CARBON = "#111111"
+SURFACE = "#181715"
+SURFACE_SOFT = "#211f1c"
+SURFACE_LIFT = "#2c2924"
+PAPER = "#f3eadb"
+PAPER_SOFT = "#d7cbb8"
+MUTED = "#a99b88"
+BORDER = "#3a352e"
+BLACK = "#050505"
 
 THEME_CSS = f"""
 :root {{
-  --halide-oxide: {OXIDE};
-  --halide-oxide-deep: {OXIDE_DEEP};
-  --halide-amber: {AMBER};
-  --halide-green: {GREEN};
+  --halide-brass: {BRASS};
+  --halide-brass-dark: {BRASS_DARK};
+  --halide-copper: {COPPER};
+  --halide-teal: {TEAL};
   --halide-violet: {VIOLET};
   --halide-red: {RED};
   --halide-ink: {INK};
+  --halide-carbon: {CARBON};
   --halide-surface: {SURFACE};
   --halide-surface-soft: {SURFACE_SOFT};
   --halide-surface-lift: {SURFACE_LIFT};
   --halide-paper: {PAPER};
+  --halide-paper-soft: {PAPER_SOFT};
   --halide-muted: {MUTED};
   --halide-border: {BORDER};
   --halide-black: {BLACK};
 }}
 
+html,
 body,
 .gradio-container {{
-  background:
-    linear-gradient(180deg, #17110d 0%, #0d0a08 48%, #070605 100%) !important;
+  background: var(--halide-ink) !important;
   color: var(--halide-paper) !important;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", sans-serif !important;
+  letter-spacing: 0 !important;
+}}
+
+body::before {{
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.018) 0,
+      rgba(255, 255, 255, 0.018) 1px,
+      transparent 1px,
+      transparent 16px
+    );
+  opacity: 0.45;
 }}
 
 .gradio-container {{
   max-width: none !important;
-  padding: 0 1rem 1rem !important;
+  min-height: 100vh !important;
+  padding: 0 18px 18px !important;
 }}
 
 #halide-app {{
@@ -60,30 +82,44 @@ body,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 0.95rem 0.25rem 0.85rem;
-  margin: 0 0 0.75rem;
-  border-bottom: 1px solid rgba(246, 200, 95, 0.25);
+  gap: 18px;
+  max-width: 1720px;
+  margin: 0 auto;
+  padding: 18px 0 14px;
+  border-bottom: 1px solid rgba(197, 154, 82, 0.34);
 }}
 
 .halide-brand-lockup {{
+  display: flex;
+  align-items: center;
+  gap: 14px;
   min-width: 0;
+}}
+
+.halide-brand-mark {{
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid rgba(197, 154, 82, 0.45);
+  background: var(--halide-black);
 }}
 
 #halide-header h1 {{
   color: var(--halide-paper);
-  font-size: clamp(1.35rem, 2.1vw, 2.15rem);
-  line-height: 1.08;
-  margin: 0.15rem 0 0;
-  letter-spacing: 0;
+  font-size: clamp(1.5rem, 2.2vw, 2.35rem);
+  line-height: 1.04;
+  margin: 2px 0 0;
+  font-weight: 860;
+  letter-spacing: 0 !important;
 }}
 
 .halide-kicker {{
-  color: var(--halide-green);
+  color: var(--halide-teal);
   display: inline-block;
-  font-size: 0.75rem;
-  font-weight: 850;
-  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  font-weight: 840;
+  letter-spacing: 0.12em !important;
   text-transform: uppercase;
 }}
 
@@ -91,26 +127,33 @@ body,
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 0.45rem;
-  min-width: min(40vw, 34rem);
+  gap: 8px;
+  min-width: min(42vw, 36rem);
 }}
 
 .halide-model-strip span,
 .halide-model-strip a {{
-  border: 1px solid rgba(110, 231, 183, 0.34);
-  color: #ddfff3;
-  background: rgba(110, 231, 183, 0.08);
+  border: 1px solid rgba(197, 154, 82, 0.32);
+  color: var(--halide-paper);
+  background: rgba(24, 23, 21, 0.92);
   border-radius: 8px;
-  padding: 0.36rem 0.56rem;
+  padding: 8px 10px;
   font-size: 0.76rem;
-  font-weight: 760;
+  font-weight: 780;
   line-height: 1;
   text-decoration: none;
   white-space: nowrap;
 }}
 
+.halide-model-strip a {{
+  color: #dffcf6;
+  border-color: rgba(102, 212, 193, 0.38);
+}}
+
 .halide-workbench {{
-  gap: 0.85rem !important;
+  max-width: 1720px;
+  margin: 14px auto 0 !important;
+  gap: 14px !important;
   align-items: flex-start;
 }}
 
@@ -120,100 +163,204 @@ body,
   min-width: 0 !important;
 }}
 
-.halide-status-band {{
-  gap: 0.7rem !important;
-  margin-bottom: 0.75rem;
+.halide-intake-panel,
+.halide-inspector {{
+  background: rgba(17, 17, 17, 0.98);
+  border: 1px solid rgba(58, 53, 46, 0.95);
+  border-radius: 8px;
+  padding: 12px;
 }}
 
-.halide-status-cell {{
-  min-width: 0;
+.halide-panel-title {{
+  color: var(--halide-paper);
+  font-size: 0.76rem;
+  font-weight: 880;
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase;
+  margin: 0 0 8px;
 }}
 
-.halide-lighttable,
-.halide-diagnosis-panel,
-.halide-panel {{
-  background: rgba(21, 19, 17, 0.96) !important;
-  border: 1px solid var(--halide-border) !important;
-  border-radius: 8px !important;
-  padding: 0.9rem !important;
-  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.34) !important;
+.halide-rail-copy {{
+  color: var(--halide-muted);
+  font-size: 0.84rem;
+  line-height: 1.42;
+  margin: 0 0 12px;
+}}
+
+.halide-model-card {{
+  border: 1px solid rgba(102, 212, 193, 0.28);
+  background: rgba(102, 212, 193, 0.055);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 12px;
+}}
+
+.halide-model-card span {{
+  color: var(--halide-teal);
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 860;
+  letter-spacing: 0.11em !important;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}}
+
+.halide-model-card strong {{
+  color: var(--halide-paper);
+  display: block;
+  font-size: 0.98rem;
+  line-height: 1.2;
+}}
+
+.halide-model-card p {{
+  color: var(--halide-muted);
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}}
+
+.halide-run-state {{
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 5px;
+  border-radius: 8px;
+  padding: 13px 15px;
+  margin-bottom: 12px;
+  background: var(--halide-surface);
+  border: 1px solid rgba(197, 154, 82, 0.30);
+  min-height: 76px;
+}}
+
+.halide-run-state strong {{
+  color: var(--halide-paper);
+  font-size: clamp(1.08rem, 1.5vw, 1.45rem);
+  line-height: 1.1;
+}}
+
+.halide-run-state span:last-child {{
+  color: var(--halide-muted);
+  font-size: 0.84rem;
+}}
+
+.halide-run-state.active {{
+  border-color: rgba(102, 212, 193, 0.46);
+}}
+
+.halide-run-state.quiet {{
+  border-color: rgba(157, 140, 255, 0.35);
+}}
+
+.halide-run-eyebrow {{
+  color: var(--halide-brass);
+  font-size: 0.68rem;
+  font-weight: 860;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase;
 }}
 
 .halide-lighttable {{
-  border-color: rgba(246, 200, 95, 0.24) !important;
-  padding-bottom: 0.7rem !important;
-}}
-
-.halide-diagnosis-panel {{
-  margin-top: 0.85rem;
-  border-left: 3px solid var(--halide-oxide) !important;
-}}
-
-.halide-intake-panel .block,
-.halide-inspector .block,
-.halide-lighttable .block,
-.halide-diagnosis-panel .block {{
-  background: rgba(29, 25, 22, 0.88) !important;
-  border-color: rgba(59, 51, 43, 0.92) !important;
+  background: #0f0f0e !important;
+  border: 1px solid rgba(197, 154, 82, 0.34) !important;
   border-radius: 8px !important;
+  padding: 13px !important;
+  box-shadow: 0 22px 52px rgba(0, 0, 0, 0.42) !important;
+}}
+
+.halide-section-header {{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}}
+
+.halide-section-header span {{
+  color: var(--halide-brass);
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 880;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase;
+}}
+
+.halide-section-header strong {{
+  color: var(--halide-paper);
+  display: block;
+  font-size: 1rem;
+  line-height: 1.2;
+  margin-top: 3px;
+}}
+
+.halide-section-header small {{
+  color: var(--halide-muted);
+  border: 1px solid rgba(197, 154, 82, 0.26);
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 0.72rem;
+  line-height: 1;
+}}
+
+#halide-compare,
+.halide-review-gallery {{
+  background: var(--halide-black) !important;
+}}
+
+.halide-review-gallery {{
+  margin-top: 12px !important;
 }}
 
 .halide-upload img,
-.halide-lighttable img {{
-  background: #050403 !important;
-}}
-
-.halide-lighttable .wrap,
-.halide-lighttable .image-container,
-.halide-upload .wrap,
-.halide-upload .image-container {{
-  border-color: rgba(246, 239, 226, 0.34) !important;
+#halide-compare img,
+.halide-review-gallery img {{
+  background: var(--halide-black) !important;
+  object-fit: contain !important;
 }}
 
 .halide-inline-controls {{
-  gap: 0.55rem !important;
+  gap: 8px !important;
 }}
 
 #halide-run-button,
 button.primary,
 .primary button {{
-  background: linear-gradient(135deg, var(--halide-oxide), var(--halide-red)) !important;
+  background: var(--halide-copper) !important;
   color: white !important;
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
   border-radius: 8px !important;
-  font-weight: 850 !important;
+  font-weight: 860 !important;
   letter-spacing: 0 !important;
-  box-shadow: 0 12px 28px rgba(201, 111, 54, 0.28) !important;
+  min-height: 46px !important;
+  box-shadow: 0 16px 30px rgba(184, 95, 63, 0.24) !important;
 }}
 
 #halide-run-button:hover,
 button.primary:hover,
 .primary button:hover {{
-  filter: brightness(1.06);
+  background: #ca6f4c !important;
 }}
 
 button.secondary,
 .secondary button,
 button {{
   border-radius: 8px !important;
-  font-weight: 740 !important;
+  font-weight: 760 !important;
 }}
 
 .halide-section-title {{
   color: var(--halide-paper);
-  font-size: 0.78rem;
-  font-weight: 850;
-  letter-spacing: 0.09em;
+  font-size: 0.76rem;
+  font-weight: 880;
+  letter-spacing: 0.1em !important;
   text-transform: uppercase;
-  margin: 0 0 0.7rem;
+  margin: 0 0 10px;
 }}
 
 .halide-subsection {{
   color: var(--halide-muted);
   font-size: 0.72rem;
-  font-weight: 850;
-  letter-spacing: 0.08em;
-  margin: 0.95rem 0 0.45rem;
+  font-weight: 860;
+  letter-spacing: 0.08em !important;
+  margin: 14px 0 7px;
   text-transform: uppercase;
 }}
 
@@ -222,47 +369,78 @@ button {{
   margin: 0;
 }}
 
+.halide-empty-card {{
+  background: rgba(33, 31, 28, 0.82);
+  border: 1px solid rgba(197, 154, 82, 0.28);
+  border-radius: 8px;
+  padding: 13px;
+}}
+
+.halide-empty-card span {{
+  color: var(--halide-brass);
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 880;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}}
+
+.halide-empty-card strong {{
+  color: var(--halide-paper);
+  display: block;
+  font-size: 1rem;
+  line-height: 1.2;
+}}
+
+.halide-empty-card p {{
+  color: var(--halide-muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+  margin: 7px 0 0;
+}}
+
 .halide-notice {{
   border-radius: 8px;
-  padding: 0.74rem 0.82rem;
+  padding: 11px 12px;
   border: 1px solid var(--halide-border);
   color: var(--halide-paper);
-  background: rgba(39, 33, 28, 0.86);
+  background: rgba(33, 31, 28, 0.9);
   font-size: 0.88rem;
-  line-height: 1.38;
-  min-height: 3rem;
+  line-height: 1.42;
+  margin-bottom: 10px;
 }}
 
 .halide-notice.good {{
-  border-color: rgba(110, 231, 183, 0.38);
-  background: rgba(110, 231, 183, 0.08);
+  border-color: rgba(102, 212, 193, 0.38);
+  background: rgba(102, 212, 193, 0.075);
 }}
 
 .halide-notice.caution {{
-  border-color: rgba(246, 200, 95, 0.42);
-  background: rgba(246, 200, 95, 0.09);
+  border-color: rgba(197, 154, 82, 0.48);
+  background: rgba(197, 154, 82, 0.08);
 }}
 
 .halide-notice.neutral {{
-  border-color: rgba(167, 139, 250, 0.36);
-  background: rgba(167, 139, 250, 0.08);
+  border-color: rgba(157, 140, 255, 0.36);
+  background: rgba(157, 140, 255, 0.075);
 }}
 
 .halide-stats {{
   display: grid;
-  gap: 0.42rem;
+  gap: 0;
 }}
 
 .halide-stats.compact {{
-  gap: 0.32rem;
+  gap: 0;
 }}
 
 .halide-stat {{
   display: grid;
-  grid-template-columns: minmax(7.2rem, 0.42fr) minmax(0, 1fr);
-  gap: 0.7rem;
-  padding: 0.42rem 0;
-  border-bottom: 1px solid rgba(59, 51, 43, 0.88);
+  grid-template-columns: minmax(7rem, 0.42fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(58, 53, 46, 0.85);
   color: var(--halide-paper);
   min-width: 0;
 }}
@@ -273,7 +451,7 @@ button {{
 
 .halide-stat-label {{
   color: var(--halide-muted);
-  font-weight: 760;
+  font-weight: 780;
 }}
 
 .halide-stat span:last-child {{
@@ -281,34 +459,71 @@ button {{
   text-align: right;
 }}
 
-.halide-diagnosis {{
-  background: rgba(39, 33, 28, 0.78);
-  border: 1px solid rgba(201, 111, 54, 0.28);
-  padding: 1rem 1.05rem;
+.halide-report {{
+  display: grid;
+  gap: 10px;
+}}
+
+.halide-report-section {{
+  background: rgba(33, 31, 28, 0.82);
+  border: 1px solid rgba(58, 53, 46, 0.94);
+  border-left: 3px solid var(--halide-brass);
   border-radius: 8px;
-  white-space: pre-wrap;
-  font-size: 0.95rem;
-  line-height: 1.58;
+  padding: 12px 13px;
+}}
+
+.halide-report-heading {{
   color: var(--halide-paper);
+  font-size: 0.78rem;
+  font-weight: 880;
+  letter-spacing: 0.1em !important;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}}
+
+.halide-report-body {{
+  color: var(--halide-paper-soft);
+  font-size: 0.93rem;
+  line-height: 1.56;
+}}
+
+.halide-report-body p {{
+  margin: 0 0 8px;
+}}
+
+.halide-report-body p:last-child {{
+  margin-bottom: 0;
+}}
+
+.halide-report-body ul,
+.halide-report-body ol {{
+  margin: 0;
+  padding-left: 1.15rem;
+}}
+
+.halide-report-body li {{
+  margin: 5px 0;
+  padding-left: 2px;
 }}
 
 .halide-pill-row {{
   display: flex;
   flex-wrap: wrap;
-  gap: 0.42rem;
+  gap: 7px;
+  margin-bottom: 10px;
 }}
 
 .halide-defect-pill {{
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  background: rgba(201, 111, 54, 0.15);
-  color: #ffe6cf;
-  border: 1px solid rgba(201, 111, 54, 0.36);
-  padding: 0.33rem 0.58rem;
-  border-radius: 8px;
-  font-size: 0.8rem;
-  font-weight: 760;
+  gap: 6px;
+  background: rgba(184, 95, 63, 0.13);
+  color: #ffe4d8;
+  border: 1px solid rgba(184, 95, 63, 0.38);
+  padding: 6px 9px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 780;
   white-space: nowrap;
 }}
 
@@ -317,38 +532,38 @@ button {{
 }}
 
 .halide-defect-pill.dust {{
-  background: rgba(246, 200, 95, 0.13);
-  border-color: rgba(246, 200, 95, 0.35);
+  background: rgba(197, 154, 82, 0.13);
+  border-color: rgba(197, 154, 82, 0.38);
 }}
 
 .halide-defect-pill.dirt {{
-  background: rgba(201, 111, 54, 0.15);
-  border-color: rgba(201, 111, 54, 0.36);
+  background: rgba(184, 95, 63, 0.13);
+  border-color: rgba(184, 95, 63, 0.38);
 }}
 
 .halide-defect-pill.scratch {{
-  background: rgba(239, 68, 68, 0.14);
-  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 93, 82, 0.14);
+  border-color: rgba(239, 93, 82, 0.42);
 }}
 
 .halide-defect-pill.long_hair {{
-  background: rgba(167, 139, 250, 0.13);
-  border-color: rgba(167, 139, 250, 0.36);
+  background: rgba(157, 140, 255, 0.13);
+  border-color: rgba(157, 140, 255, 0.38);
 }}
 
 .halide-defect-pill.short_hair {{
-  background: rgba(110, 231, 183, 0.11);
-  border-color: rgba(110, 231, 183, 0.34);
+  background: rgba(102, 212, 193, 0.11);
+  border-color: rgba(102, 212, 193, 0.36);
 }}
 
 .halide-defect-pill.emulsion_damage {{
-  background: rgba(226, 232, 240, 0.13);
-  border-color: rgba(226, 232, 240, 0.34);
+  background: rgba(215, 203, 184, 0.12);
+  border-color: rgba(215, 203, 184, 0.34);
 }}
 
 .halide-defect-pill.chemical_stain {{
-  background: rgba(34, 197, 94, 0.12);
-  border-color: rgba(34, 197, 94, 0.34);
+  background: rgba(74, 222, 128, 0.12);
+  border-color: rgba(74, 222, 128, 0.34);
 }}
 
 .halide-defect-pill.light_leak {{
@@ -357,35 +572,44 @@ button {{
 }}
 
 .halide-history-item {{
-  background: rgba(29, 25, 22, 0.78);
-  border: 1px solid rgba(59, 51, 43, 0.92);
+  background: rgba(33, 31, 28, 0.82);
+  border: 1px solid rgba(58, 53, 46, 0.94);
   border-radius: 8px;
-  margin-bottom: 0.65rem;
-  padding: 0.75rem;
+  margin-bottom: 9px;
+  padding: 11px;
 }}
 
 .halide-history-title {{
   color: var(--halide-paper);
-  font-weight: 850;
-  margin-bottom: 0.25rem;
+  font-weight: 860;
+  margin-bottom: 4px;
   overflow-wrap: anywhere;
 }}
 
 .halide-history-meta {{
   color: var(--halide-muted);
   font-size: 0.78rem;
-  line-height: 1.35;
-  margin: 0.3rem 0;
+  line-height: 1.36;
+  margin: 4px 0;
 }}
 
 .halide-history-detail {{
   display: grid;
-  gap: 0.4rem;
+  gap: 8px;
 }}
 
 .halide-history-feed {{
   max-height: 18rem;
   overflow: auto;
+}}
+
+.halide-intake-panel .block,
+.halide-inspector .block,
+.halide-lighttable .block {{
+  background: rgba(24, 23, 21, 0.95) !important;
+  border-color: rgba(58, 53, 46, 0.95) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
 }}
 
 input,
@@ -408,19 +632,13 @@ label,
 }}
 
 .label-wrap,
-.label-wrap span {{
-  background: rgba(39, 33, 28, 0.96) !important;
-  border-color: rgba(246, 200, 95, 0.22) !important;
-  color: var(--halide-paper) !important;
-  border-radius: 6px !important;
-  font-weight: 760 !important;
-}}
-
+.label-wrap span,
 label[data-testid="block-label"] {{
-  background: rgba(39, 33, 28, 0.96) !important;
-  border: 1px solid rgba(246, 200, 95, 0.22) !important;
+  background: rgba(33, 31, 28, 0.98) !important;
+  border-color: rgba(197, 154, 82, 0.24) !important;
   color: var(--halide-paper) !important;
   border-radius: 6px !important;
+  font-weight: 780 !important;
   box-shadow: none !important;
 }}
 
@@ -429,16 +647,16 @@ label[data-testid="block-label"] span {{
 }}
 
 label[data-testid$="-radio-label"] {{
-  background: rgba(39, 33, 28, 0.98) !important;
-  border: 1px solid rgba(246, 239, 226, 0.18) !important;
-  border-radius: 7px !important;
+  background: rgba(33, 31, 28, 0.98) !important;
+  border: 1px solid rgba(243, 234, 219, 0.18) !important;
+  border-radius: 8px !important;
   box-shadow: none !important;
   opacity: 1 !important;
 }}
 
 label[data-testid$="-radio-label"].selected {{
-  background: rgba(201, 111, 54, 0.26) !important;
-  border-color: rgba(246, 200, 95, 0.45) !important;
+  background: rgba(197, 154, 82, 0.16) !important;
+  border-color: rgba(197, 154, 82, 0.5) !important;
 }}
 
 label[data-testid$="-radio-label"] span,
@@ -449,17 +667,23 @@ label[data-testid$="-radio-label"] input,
 }}
 
 label[data-testid$="-radio-label"] input {{
-  accent-color: var(--halide-oxide);
+  accent-color: var(--halide-brass);
+}}
+
+.tabs {{
+  gap: 4px !important;
 }}
 
 .tabs button {{
   color: var(--halide-muted) !important;
   font-weight: 820 !important;
+  border-radius: 8px !important;
 }}
 
 .tabs button.selected {{
   color: var(--halide-paper) !important;
-  border-color: var(--halide-oxide) !important;
+  border-color: var(--halide-brass) !important;
+  background: rgba(197, 154, 82, 0.10) !important;
 }}
 
 table,
@@ -477,13 +701,31 @@ code {{
 }}
 
 footer {{
+  max-width: 1720px;
+  margin: 0 auto;
   color: var(--halide-muted) !important;
   text-align: center;
-  padding: 0.9rem;
+  padding: 14px 8px 4px;
   font-size: 0.82rem;
 }}
 
-@media (max-width: 980px) {{
+@media (max-width: 1180px) {{
+  .halide-workbench {{
+    flex-direction: column !important;
+  }}
+
+  .halide-intake-panel,
+  .halide-main-stage,
+  .halide-inspector {{
+    width: 100% !important;
+  }}
+}}
+
+@media (max-width: 760px) {{
+  .gradio-container {{
+    padding: 0 10px 12px !important;
+  }}
+
   #halide-header {{
     align-items: flex-start;
     flex-direction: column;
@@ -494,23 +736,14 @@ footer {{
     min-width: 0;
   }}
 
-  .halide-status-band {{
-    flex-direction: column;
-  }}
-
-  .halide-workbench {{
-    flex-direction: column !important;
-  }}
-
-  .halide-intake-panel,
-  .halide-main-stage,
-  .halide-inspector {{
-    width: 100% !important;
+  .halide-brand-mark {{
+    width: 40px;
+    height: 40px;
   }}
 
   .halide-stat {{
     grid-template-columns: 1fr;
-    gap: 0.18rem;
+    gap: 3px;
   }}
 
   .halide-stat span:last-child {{
@@ -524,39 +757,39 @@ def build_theme() -> gr.Theme:
     """Build a compact custom workbench theme."""
     return gr.themes.Base(
         primary_hue=gr.themes.Color(
-            c50="#fff7ed",
-            c100="#ffead5",
-            c200="#fed1a8",
-            c300="#f6aa6a",
-            c400="#e88b45",
-            c500=OXIDE,
-            c600=OXIDE_DEEP,
-            c700="#74311f",
-            c800="#5c281d",
-            c900="#3f1b14",
-            c950="#24100b",
+            c50="#fff8ed",
+            c100="#f8ead2",
+            c200="#ebd1a3",
+            c300="#d9b36d",
+            c400=BRASS,
+            c500=BRASS,
+            c600=BRASS_DARK,
+            c700="#694a24",
+            c800="#4d361d",
+            c900="#332313",
+            c950="#1c1209",
         ),
         secondary_hue=gr.themes.Color(
-            c50="#ecfdf5",
-            c100="#d1fae5",
-            c200="#a7f3d0",
-            c300=GREEN,
-            c400="#34d399",
-            c500="#10b981",
-            c600="#059669",
-            c700="#047857",
-            c800="#065f46",
-            c900="#064e3b",
-            c950="#022c22",
+            c50="#effffb",
+            c100="#d5fff7",
+            c200="#a8f5ea",
+            c300=TEAL,
+            c400="#3fbfae",
+            c500="#259d90",
+            c600="#1d7d74",
+            c700="#1b645e",
+            c800="#174d49",
+            c900="#123c39",
+            c950="#071f1d",
         ),
         neutral_hue=gr.themes.Color(
-            c50="#faf7f0",
+            c50="#fbf7ef",
             c100=PAPER,
-            c200="#d8cec0",
+            c200=PAPER_SOFT,
             c300=MUTED,
-            c400="#918477",
-            c500="#75695e",
-            c600="#5f5248",
+            c400="#85796a",
+            c500="#6e6357",
+            c600="#544d44",
             c700=BORDER,
             c800=SURFACE_SOFT,
             c900=SURFACE,
@@ -569,8 +802,8 @@ def build_theme() -> gr.Theme:
         body_background_fill_dark=INK,
         body_text_color=PAPER,
         body_text_color_dark=PAPER,
-        button_primary_background_fill=OXIDE,
-        button_primary_background_fill_dark=OXIDE,
+        button_primary_background_fill=COPPER,
+        button_primary_background_fill_dark=COPPER,
         button_primary_text_color="#ffffff",
         button_primary_text_color_dark="#ffffff",
         block_background_fill=SURFACE,

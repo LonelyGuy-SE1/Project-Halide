@@ -83,7 +83,7 @@ def get_vision_config() -> VisionConfig:
         ),
         local_model_path=env_path(
             "HALIDE_VISION_LOCAL_MODEL_PATH",
-            CHECKPOINT_DIR / "minicpm-v-4.6-merged-v3",
+            CHECKPOINT_DIR / "minicpm-v-4.6-merged-v4-stage1",
         ),
         use_finetuned=env_bool("HALIDE_USE_FINETUNED_VISION", False),
         downsample_mode=os.getenv("HALIDE_DOWNSAMPLE_MODE", "4x"),
