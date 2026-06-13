@@ -22,8 +22,12 @@ DETECTION_PROMPT_BASE = (
     "texture, grain, wires, shadows, printed text, or real hair inside the "
     "photographed scene as long_hair or short_hair. Use scratch only for thin "
     "physical abrasion or scan-surface lines, not object edges, stems, "
-    "typography, or composition lines. Use emulsion_damage for broad peeled, "
-    "cracked, torn, or missing emulsion regions. Output a JSON object with a "
+    "typography, or composition lines. Transparent or semi-transparent crack "
+    "networks, lifted film bands, broken coating sheets, and fracture lines "
+    "crossing a face or subject are defects, not scene content. Use "
+    "emulsion_damage for broad peeled, cracked, torn, lifted, or missing "
+    "emulsion regions. Use scratch for fine crack branches and abrasion "
+    "lines. Output a JSON object with a "
     "'defects' array. Each defect has: "
     f"'label' ({DEFECT_LABELS}), "
     "optional 'confidence' from 0.0 to 1.0, "
@@ -46,4 +50,3 @@ DETECTION_PROMPT_FLOAT = (
     + "'bbox' (normalized [x_min, y_min, x_max, y_max] from 0.0 to 1.0). "
     + DETECTION_PROMPT_SUFFIX
 )
-
