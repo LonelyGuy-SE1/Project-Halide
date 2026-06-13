@@ -107,6 +107,43 @@ def test_evaluate_predictions_averages_iou_across_matches(tmp_path) -> None:
     assert result["classes"]["scratch"]["mean_iou"] == 0.75
 
 
+def test_evaluate_predictions_reports_negative_detection_rate(tmp_path) -> None:
+    gt = tmp_path / "gt.jsonl"
+    preds = tmp_path / "preds.jsonl"
+    _write_jsonl(
+        gt,
+        [
+            {"image": "clean-a.jpg", "annotations": []},
+            {"image": "clean-b.jpg", "annotations": []},
+            {
+                "image": "defect.jpg",
+                "annotations": [{"label": "dust", "bbox": [0.1, 0.1, 0.2, 0.2]}],
+            },
+        ],
+    )
+    _write_jsonl(
+        preds,
+        [
+            {
+                "image": "clean-a.jpg",
+                "predictions": [{"label": "dust", "bbox": [0.1, 0.1, 0.2, 0.2]}],
+            },
+            {"image": "clean-b.jpg", "predictions": []},
+            {
+                "image": "defect.jpg",
+                "predictions": [{"label": "dust", "bbox": [0.1, 0.1, 0.2, 0.2]}],
+            },
+        ],
+    )
+
+    result = evaluate_predictions(preds, ground_truth_path=gt)
+
+    assert result["image_level"]["negative_images"] == 2
+    assert result["image_level"]["negative_images_with_predictions"] == 1
+    assert result["image_level"]["negative_detection_rate"] == 0.5
+    assert result["image_level"]["positive_detection_rate"] == 1.0
+
+
 def test_augment_image_generates_valid_annotations(tmp_path) -> None:
     overlay_path = tmp_path / "scratch.png"
     overlay = Image.new("RGBA", (10, 4), (0, 0, 0, 0))

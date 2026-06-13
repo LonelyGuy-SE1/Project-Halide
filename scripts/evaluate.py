@@ -133,9 +133,21 @@ def evaluate_predictions(
     truth = _ground_truth_map(ground_truth_path)
     aggregate = {label: ClassMetrics(label=label) for label in sorted(ALLOWED_LABELS)}
     image_reports: dict[str, Any] = {}
+    negative_images = 0
+    negative_images_with_predictions = 0
+    positive_images = 0
+    positive_images_with_predictions = 0
 
     for image, gt_defects in truth.items():
         pred_defects = preds.get(image, [])
+        if gt_defects:
+            positive_images += 1
+            if pred_defects:
+                positive_images_with_predictions += 1
+        else:
+            negative_images += 1
+            if pred_defects:
+                negative_images_with_predictions += 1
         metrics, counts = match_image(
             pred_defects,
             gt_defects,
@@ -170,10 +182,24 @@ def evaluate_predictions(
     precision = totals["true_positive"] / precision_den if precision_den else 0.0
     recall = totals["true_positive"] / recall_den if recall_den else 0.0
     f1_den = precision + recall
+    negative_rate = (
+        negative_images_with_predictions / negative_images if negative_images else 0.0
+    )
+    positive_rate = (
+        positive_images_with_predictions / positive_images if positive_images else 0.0
+    )
 
     return {
         "iou_threshold": iou_threshold,
         "images_evaluated": len(truth),
+        "image_level": {
+            "negative_images": negative_images,
+            "negative_images_with_predictions": negative_images_with_predictions,
+            "negative_detection_rate": round(negative_rate, 6),
+            "positive_images": positive_images,
+            "positive_images_with_predictions": positive_images_with_predictions,
+            "positive_detection_rate": round(positive_rate, 6),
+        },
         "micro": {
             **totals,
             "precision": round(precision, 6),
