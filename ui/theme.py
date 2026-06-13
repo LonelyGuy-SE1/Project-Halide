@@ -266,6 +266,109 @@ body::before {{
   box-shadow: 0 22px 52px rgba(0, 0, 0, 0.42) !important;
 }}
 
+.halide-empty-lighttable {{
+  position: relative;
+  min-height: clamp(360px, 54vh, 760px);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  border: 1px solid rgba(243, 234, 219, 0.26);
+  background:
+    linear-gradient(180deg, rgba(33, 31, 28, 0.76), rgba(5, 5, 5, 0.96)),
+    repeating-linear-gradient(
+      0deg,
+      rgba(243, 234, 219, 0.035) 0,
+      rgba(243, 234, 219, 0.035) 1px,
+      transparent 1px,
+      transparent 24px
+    );
+}}
+
+.halide-empty-lighttable::after {{
+  content: "";
+  position: absolute;
+  inset: 24px;
+  border: 1px solid rgba(243, 234, 219, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(5, 5, 5, 0.82);
+  pointer-events: none;
+}}
+
+.halide-empty-frame-grid {{
+  position: absolute;
+  inset: 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  opacity: 0.86;
+}}
+
+.halide-empty-frame-grid > div {{
+  position: relative;
+  min-width: 0;
+  background:
+    linear-gradient(135deg, rgba(17, 17, 17, 0.9), rgba(44, 41, 36, 0.46)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(197, 154, 82, 0.06) 0,
+      rgba(197, 154, 82, 0.06) 1px,
+      transparent 1px,
+      transparent 38px
+    );
+  border: 1px solid rgba(58, 53, 46, 0.92);
+}}
+
+.halide-empty-frame-grid span {{
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  color: rgba(243, 234, 219, 0.72);
+  font-size: 0.7rem;
+  font-weight: 860;
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase;
+}}
+
+.halide-empty-center {{
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 8px;
+  min-width: min(22rem, calc(100% - 48px));
+  padding: 18px 20px;
+  text-align: center;
+  border-radius: 8px;
+  border: 1px solid rgba(197, 154, 82, 0.42);
+  background: rgba(10, 10, 10, 0.78);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.46);
+}}
+
+.halide-empty-center span {{
+  color: var(--halide-brass);
+  font-size: 0.68rem;
+  font-weight: 880;
+  letter-spacing: 0.12em !important;
+  text-transform: uppercase;
+}}
+
+.halide-empty-center strong {{
+  color: var(--halide-paper);
+  font-size: clamp(1.05rem, 1.8vw, 1.6rem);
+  line-height: 1.12;
+}}
+
+.halide-empty-lighttable.active {{
+  border-color: rgba(102, 212, 193, 0.34);
+}}
+
+.halide-empty-lighttable.active .halide-empty-center {{
+  border-color: rgba(102, 212, 193, 0.42);
+}}
+
+.halide-empty-lighttable.active .halide-empty-center span {{
+  color: var(--halide-teal);
+}}
+
 .halide-section-header {{
   display: flex;
   align-items: flex-start;
@@ -314,10 +417,6 @@ body::before {{
 .halide-review-gallery img {{
   background: var(--halide-black) !important;
   object-fit: contain !important;
-}}
-
-.halide-inline-controls {{
-  gap: 8px !important;
 }}
 
 #halide-run-button,
@@ -571,36 +670,9 @@ button {{
   border-color: rgba(244, 114, 182, 0.36);
 }}
 
-.halide-history-item {{
-  background: rgba(33, 31, 28, 0.82);
-  border: 1px solid rgba(58, 53, 46, 0.94);
-  border-radius: 8px;
-  margin-bottom: 9px;
-  padding: 11px;
-}}
-
-.halide-history-title {{
-  color: var(--halide-paper);
-  font-weight: 860;
-  margin-bottom: 4px;
-  overflow-wrap: anywhere;
-}}
-
-.halide-history-meta {{
-  color: var(--halide-muted);
-  font-size: 0.78rem;
-  line-height: 1.36;
-  margin: 4px 0;
-}}
-
 .halide-history-detail {{
   display: grid;
   gap: 8px;
-}}
-
-.halide-history-feed {{
-  max-height: 18rem;
-  overflow: auto;
 }}
 
 .halide-intake-panel .block,
@@ -610,6 +682,23 @@ button {{
   border-color: rgba(58, 53, 46, 0.95) !important;
   border-radius: 8px !important;
   box-shadow: none !important;
+  outline: none !important;
+  overflow: hidden !important;
+}}
+
+.halide-intake-panel .block:focus-within,
+.halide-inspector .block:focus-within,
+.halide-lighttable .block:focus-within {{
+  border-color: rgba(197, 154, 82, 0.48) !important;
+  box-shadow: 0 0 0 1px rgba(197, 154, 82, 0.16) !important;
+}}
+
+.halide-intake-panel .form,
+.halide-inspector .form,
+.halide-lighttable .form {{
+  background: transparent !important;
+  border-color: transparent !important;
+  overflow: visible !important;
 }}
 
 input,
@@ -621,6 +710,8 @@ select,
 .prose {{
   background-color: var(--halide-surface-soft) !important;
   color: var(--halide-paper) !important;
+  border-color: rgba(58, 53, 46, 0.95) !important;
+  outline: none !important;
 }}
 
 label,
@@ -712,12 +803,21 @@ footer {{
 @media (max-width: 1180px) {{
   .halide-workbench {{
     flex-direction: column !important;
+    gap: 12px !important;
   }}
 
   .halide-intake-panel,
   .halide-main-stage,
   .halide-inspector {{
     width: 100% !important;
+  }}
+
+  .halide-inspector {{
+    min-width: 0 !important;
+  }}
+
+  .halide-lighttable {{
+    padding: 11px !important;
   }}
 }}
 
@@ -729,16 +829,79 @@ footer {{
   #halide-header {{
     align-items: flex-start;
     flex-direction: column;
+    gap: 12px;
+    padding-top: 14px;
+  }}
+
+  #halide-header h1 {{
+    font-size: 1.42rem;
+    max-width: 11rem;
   }}
 
   .halide-model-strip {{
     justify-content: flex-start;
     min-width: 0;
+    width: 100%;
+    gap: 6px;
+  }}
+
+  .halide-model-strip span,
+  .halide-model-strip a {{
+    padding: 7px 8px;
+    font-size: 0.68rem;
   }}
 
   .halide-brand-mark {{
     width: 40px;
     height: 40px;
+  }}
+
+  .halide-intake-panel,
+  .halide-inspector {{
+    padding: 10px;
+  }}
+
+  .halide-run-state {{
+    min-height: 68px;
+    padding: 12px;
+  }}
+
+  .halide-empty-lighttable {{
+    min-height: 370px;
+  }}
+
+  .halide-empty-frame-grid {{
+    inset: 10px;
+  }}
+
+  .halide-empty-lighttable::after {{
+    inset: 16px;
+  }}
+
+  .halide-empty-frame-grid span {{
+    top: 10px;
+    left: 10px;
+    font-size: 0.62rem;
+  }}
+
+  .halide-empty-center {{
+    min-width: calc(100% - 40px);
+    padding: 15px 16px;
+  }}
+
+  .tabs button {{
+    min-height: 42px !important;
+    padding: 9px 10px !important;
+  }}
+
+  .halide-review-gallery {{
+    height: 190px !important;
+  }}
+
+  #halide-run-button,
+  button.primary,
+  .primary button {{
+    min-height: 48px !important;
   }}
 
   .halide-stat {{

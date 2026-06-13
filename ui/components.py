@@ -50,6 +50,30 @@ REPORT_EMPTY_STATE = (
     '<p>Results, evidence counts, and physical fixes will appear here after a GPU run.</p>'
     "</div>"
 )
+LIGHTTABLE_EMPTY_STATE = (
+    '<div class="halide-empty-lighttable">'
+    '<div class="halide-empty-frame-grid">'
+    '<div><span>Original</span></div>'
+    '<div><span>Validated overlay</span></div>'
+    "</div>"
+    '<div class="halide-empty-center">'
+    '<span>Ready</span>'
+    '<strong>No scan loaded</strong>'
+    "</div>"
+    "</div>"
+)
+LIGHTTABLE_RUNNING_STATE = (
+    '<div class="halide-empty-lighttable active">'
+    '<div class="halide-empty-frame-grid">'
+    '<div><span>Vision extraction</span></div>'
+    '<div><span>Diagnostic report</span></div>'
+    "</div>"
+    '<div class="halide-empty-center">'
+    '<span>Running</span>'
+    '<strong>GPU inspection in progress</strong>'
+    "</div>"
+    "</div>"
+)
 
 REPORT_SECTIONS = {
     "root cause": "Root cause",
@@ -350,34 +374,6 @@ def history_choices(entries: Iterable[dict]) -> list[tuple[str, str]]:
     return [(history_label(e), str(e.get("id", ""))) for e in entries if e.get("id")]
 
 
-def history_row_html(entry: dict) -> str:
-    """Render a single row in the recent-diagnoses sidebar."""
-    counts = entry.get("label_counts", {}) or {}
-    total = entry.get("defect_count", 0) or 0
-    film = entry.get("film_type", "Unknown")
-    age = entry.get("film_age_years", "?")
-    storage = entry.get("storage", "?")
-    ts = entry.get("created_at", 0)
-    seconds = entry.get("total_seconds", 0.0) or 0.0
-    stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(ts or 0)))
-    return (
-        f'<div class="halide-history-item">'
-        f'<div class="halide-history-title">{html.escape(str(film))}</div>'
-        f'<div class="halide-history-meta">age {html.escape(str(age))}y, '
-        f"{html.escape(str(storage))}, {html.escape(stamp)}</div>"
-        f"{defect_pills_html(counts)}"
-        f'<div class="halide-history-meta">defects {int(total)} | {seconds:.2f}s</div>'
-        f"</div>"
-    )
-
-
-def render_history(entries: Iterable[dict]) -> str:
-    items = "".join(history_row_html(e) for e in entries)
-    if not items:
-        return '<p class="halide-muted">No diagnoses yet.</p>'
-    return items
-
-
 def history_detail_html(entry: dict | None) -> str:
     if not entry:
         return '<p class="halide-muted">Select a diagnosis to review details.</p>'
@@ -423,6 +419,8 @@ def raw_json_text(result_or_entry: dict | None) -> str:
 __all__ = [
     "HEADER_HTML",
     "EMPTY_STATE",
+    "LIGHTTABLE_EMPTY_STATE",
+    "LIGHTTABLE_RUNNING_STATE",
     "REPORT_EMPTY_STATE",
     "compact_label_counts",
     "confidence_notice_html",
@@ -435,7 +433,6 @@ __all__ = [
     "history_table_rows",
     "metadata_html",
     "render_markdown_report",
-    "render_history",
     "run_state_html",
     "raw_json_text",
     "stats_html",
