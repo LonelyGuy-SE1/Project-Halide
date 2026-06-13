@@ -3,30 +3,47 @@
 from __future__ import annotations
 
 import html
-import io
 import logging
 from typing import Any
 
 import gradio as gr
 
+from config import get_app_config
+from data.preprocessing import draw_defects, image_to_png_bytes, load_image
 from pipeline.pipeline import run_diagnosis
 from storage.cache import get_cache
-from storage.database import init_db, list_recent, record_diagnosis
+from storage.database import get_diagnosis, init_db, list_recent, record_diagnosis
 from ui.components import (
+    EMPTY_STATE,
     HEADER_HTML,
-    THEME_CSS,
+    confidence_notice_html,
+    defect_table_rows,
     defect_pills_html,
     diagnosis_html,
+    history_choices,
+    history_detail_html,
+    history_table_rows,
+    metadata_html,
     render_history,
+    raw_json_text,
     stats_html,
 )
-from ui.theme import build_theme
+from ui.theme import THEME_CSS, build_theme
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
+def _gpu_decorator():
+    try:
+        import spaces
+    except ImportError:
+        return lambda fn: fn
+    return spaces.GPU(duration=get_app_config().gpu_duration_seconds)
+
+
 DEFAULT_FILM_TYPES = [
+    "Unknown / Not specified",
     "Kodak Portra 400 (35mm)",
     "Kodak Tri-X 400 (35mm)",
     "Kodak Ektar 100 (35mm)",
@@ -40,167 +57,354 @@ DEFAULT_FILM_TYPES = [
 ]
 
 STORAGE_OPTIONS = [
+    "unknown",
     "fridge, sealed",
     "freezer, sealed",
     "room temp, sealed",
     "room temp, loose",
     "shoe box, attic",
     "shoe box, basement",
-    "unknown",
 ]
 
 RESOLUTION_OPTIONS = [2000, 3000, 4000, 5000, 6000, 8000]
 
+METADATA_CONFIDENCE_OPTIONS = [
+    "Low, rough guess",
+    "Medium, partly verified",
+    "High, verified from notes or edge marks",
+]
 
-def _image_to_bytes(pil_image: Any) -> bytes:
-    buf = io.BytesIO()
-    pil_image.save(buf, format="PNG")
-    return buf.getvalue()
+
+def normalize_metadata_confidence(value: str | None) -> str:
+    text = (value or "low").strip().lower()
+    if text.startswith("high"):
+        return "high"
+    if text.startswith("medium"):
+        return "medium"
+    return "low"
 
 
+def _history_state(
+    selected_id: str | None = None,
+) -> tuple[str, dict | None, Any, list[list[str]]]:
+    entries = list_recent(limit=get_app_config().max_history_items)
+    choices = history_choices(entries)
+    ids = [value for _label, value in choices]
+    value = selected_id if selected_id in ids else (ids[0] if ids else None)
+    selected = next((entry for entry in entries if entry.get("id") == value), None)
+    return render_history(entries), selected, gr.update(choices=choices, value=value), history_table_rows(entries)
+
+
+@_gpu_decorator()
 def run_pipeline(
     image: Any,
     film_type: str,
     film_age_years: int,
     storage: str,
     scan_dpi: int,
+    metadata_confidence: str = "low",
     progress: gr.Progress = gr.Progress(),
-) -> tuple[str, str, str, str]:
+) -> tuple[Any, str, str, str, str, str, str, list[list[str]], str, str, Any, list[list[str]]]:
     """Gradio handler for the diagnose button."""
+    history_html, selected_entry, selector_update, history_rows = _history_state()
     if image is None:
-        empty = '<p style="color: var(--halide-crimson);">No image provided.</p>'
-        return empty, empty, empty, render_history(list_recent(limit=10))
+        empty = '<p class="halide-muted">No image provided.</p>'
+        return (
+            None,
+            empty,
+            empty,
+            empty,
+            empty,
+            empty,
+            "{}",
+            [],
+            history_html,
+            history_detail_html(selected_entry),
+            selector_update,
+            history_rows,
+        )
 
     try:
         progress(0.0, "Hashing image for cache lookup...")
+        pil_image = load_image(image)
         cache = get_cache()
-        image_bytes = _image_to_bytes(image)
-        cached = cache.get(image_bytes)
+        image_bytes = image_to_png_bytes(pil_image)
+        metadata = {
+            "film_type": film_type or "Unknown / Not specified",
+            "film_age_years": int(film_age_years or 0),
+            "storage": storage or "unknown",
+            "scan_resolution_dpi": int(scan_dpi or 4000),
+            "metadata_confidence": normalize_metadata_confidence(metadata_confidence),
+        }
+        cached = cache.get(image_bytes, metadata=metadata)
         if cached is not None:
             logger.info("Returning cached diagnosis")
             result = cached
         else:
             progress(0.1, "Stage 1/2: running vision defect extraction...")
             result = run_diagnosis(
-                image=image,
-                film_type=film_type or "Unknown 35mm",
-                film_age_years=int(film_age_years or 0),
-                storage=storage or "unknown",
-                scan_resolution_dpi=int(scan_dpi or 4000),
+                image=pil_image,
+                film_type=metadata["film_type"],
+                film_age_years=metadata["film_age_years"],
+                storage=metadata["storage"],
+                scan_resolution_dpi=metadata["scan_resolution_dpi"],
+                metadata_confidence=metadata["metadata_confidence"],
             )
             progress(0.85, "Stage 2/2: persisting diagnosis...")
             try:
-                record_diagnosis(result)
+                diagnosis_id = record_diagnosis(result)
+                result["diagnosis_id"] = diagnosis_id
             except Exception as exc:  # pragma: no cover
                 logger.warning("Failed to record diagnosis: %s", exc)
-            cache.put(image_bytes, result)
+            cache.put(image_bytes, result, metadata=metadata)
 
         progress(1.0, "Done.")
 
         counts = result.get("defects", {}).get("label_counts", {}) or {}
+        defects = result.get("defects", {}).get("defects", []) or []
+        annotated = draw_defects(
+            pil_image,
+            defects,
+            title=f"Halide: {len(defects)} validated defects",
+        )
+        image_pair = (pil_image, annotated)
         stats = stats_html(result)
+        notice = confidence_notice_html(result)
         pills = defect_pills_html(counts)
         diag = diagnosis_html(result.get("diagnosis", {}).get("diagnosis_text", ""))
-        history = render_history(list_recent(limit=10))
-        return stats, pills, diag, history
+        meta = metadata_html(result)
+        raw_json = raw_json_text(result)
+        table_rows = defect_table_rows(result)
+        history, selected_entry, selector_update, history_rows = _history_state(result.get("diagnosis_id"))
+        return (
+            image_pair,
+            stats,
+            notice,
+            pills,
+            diag,
+            meta,
+            raw_json,
+            table_rows,
+            history,
+            history_detail_html(selected_entry),
+            selector_update,
+            history_rows,
+        )
     except Exception as exc:  # pragma: no cover
         logger.exception("Pipeline failed")
         err = (
-            '<div class="halide-card" style="border-color: var(--halide-crimson);">'
+            '<div class="halide-panel" style="border-color: var(--halide-red);">'
             f'<div class="halide-section-title" style="color: var(--halide-red);">'
             f"Pipeline error</div>"
-            f"<pre style=\"color: var(--halide-parchment); white-space: pre-wrap;\">"
+            f"<pre style=\"color: var(--halide-text); white-space: pre-wrap;\">"
             f"{html.escape(str(exc))}</pre></div>"
         )
-        return err, "", "", render_history(list_recent(limit=10))
+        history, selected_entry, selector_update, history_rows = _history_state()
+        return (
+            None,
+            err,
+            "",
+            "",
+            "",
+            "",
+            "{}",
+            [],
+            history,
+            history_detail_html(selected_entry),
+            selector_update,
+            history_rows,
+        )
 
 
-def refresh_history() -> str:
-    return render_history(list_recent(limit=10))
+def refresh_history(selected_id: str | None = None) -> tuple[Any, str, str, str, list[list[str]]]:
+    history, selected_entry, selector_update, history_rows = _history_state(selected_id)
+    return (
+        selector_update,
+        history,
+        history_detail_html(selected_entry),
+        raw_json_text(selected_entry),
+        history_rows,
+    )
+
+
+def open_history(diagnosis_id: str | None) -> tuple[str, str]:
+    entry = get_diagnosis(diagnosis_id or "") if diagnosis_id else None
+    return history_detail_html(entry), raw_json_text(entry)
 
 
 def build_app() -> gr.Blocks:
     init_db()
-    theme = build_theme()
+    history_html, selected_entry, selector_update, initial_history_rows = _history_state()
+    initial_choices = selector_update["choices"] if isinstance(selector_update, dict) else []
+    initial_value = selector_update["value"] if isinstance(selector_update, dict) else None
 
-    with gr.Blocks(title="Project Halide") as app:
+    with gr.Blocks(
+        title="Project Halide",
+        fill_width=True,
+        fill_height=True,
+        elem_id="halide-app",
+    ) as app:
         gr.HTML(HEADER_HTML)
 
-        with gr.Row():
-            with gr.Column(scale=1):
-                with gr.Group(elem_classes="halide-card"):
-                    gr.Markdown('<div class="halide-section-title">Scan upload</div>')
-                    image_input = gr.Image(
-                        label="Film scan",
+        with gr.Row(elem_classes="halide-workbench", equal_height=False):
+            with gr.Column(scale=3, min_width=320, elem_classes="halide-intake-panel"):
+                image_input = gr.Image(
+                    label="Film scan",
+                    type="pil",
+                    height=330,
+                    sources=["upload", "clipboard"],
+                    buttons=["download", "fullscreen"],
+                    elem_classes="halide-upload",
+                )
+                film_type = gr.Dropdown(
+                    choices=DEFAULT_FILM_TYPES,
+                    value=DEFAULT_FILM_TYPES[0],
+                    label="Film stock",
+                    allow_custom_value=True,
+                )
+                with gr.Row(elem_classes="halide-inline-controls"):
+                    film_age = gr.Slider(
+                        minimum=0,
+                        maximum=80,
+                        step=1,
+                        value=0,
+                        label="Age",
+                        buttons=["reset"],
+                    )
+                    scan_dpi = gr.Dropdown(
+                        choices=RESOLUTION_OPTIONS,
+                        value=4000,
+                        label="DPI",
+                    )
+                storage = gr.Radio(
+                    choices=STORAGE_OPTIONS,
+                    value=STORAGE_OPTIONS[0],
+                    label="Storage",
+                )
+                metadata_confidence = gr.Radio(
+                    choices=METADATA_CONFIDENCE_OPTIONS,
+                    value=METADATA_CONFIDENCE_OPTIONS[0],
+                    label="Metadata confidence",
+                )
+                run_btn = gr.Button(
+                    "Diagnose scan",
+                    variant="primary",
+                    size="lg",
+                    elem_id="halide-run-button",
+                )
+
+            with gr.Column(scale=7, min_width=560, elem_classes="halide-main-stage"):
+                with gr.Row(elem_classes="halide-status-band", equal_height=True):
+                    notice_output = gr.HTML(value=EMPTY_STATE, elem_classes="halide-status-cell")
+                    defect_summary = gr.HTML(value=EMPTY_STATE, elem_classes="halide-status-cell")
+
+                with gr.Group(elem_classes="halide-lighttable"):
+                    gr.HTML('<div class="halide-section-title">Light table</div>')
+                    compare_output = gr.ImageSlider(
+                        label="Original / overlay",
                         type="pil",
-                        height=380,
-                        sources=["upload", "clipboard"],
+                        height="58vh",
+                        max_height=760,
+                        slider_position=52,
+                        interactive=False,
+                        buttons=["download", "fullscreen"],
                     )
 
-                with gr.Group(elem_classes="halide-card"):
-                    gr.Markdown('<div class="halide-section-title">Film metadata</div>')
-                    film_type = gr.Dropdown(
-                        choices=DEFAULT_FILM_TYPES,
-                        value=DEFAULT_FILM_TYPES[0],
-                        label="Film stock",
-                    )
-                    with gr.Row():
-                        film_age = gr.Slider(
-                            minimum=0,
-                            maximum=80,
-                            step=1,
-                            value=2,
-                            label="Age (years)",
+                with gr.Group(elem_classes="halide-diagnosis-panel"):
+                    gr.HTML('<div class="halide-section-title">Diagnosis and physical fixes</div>')
+                    diagnosis_output = gr.HTML(value=EMPTY_STATE)
+
+            with gr.Column(scale=3, min_width=360, elem_classes="halide-inspector"):
+                with gr.Tabs(selected="evidence", elem_classes="halide-inspector-tabs"):
+                    with gr.Tab("Evidence", id="evidence"):
+                        stats_output = gr.HTML(value=EMPTY_STATE)
+                        metadata_output = gr.HTML(value=EMPTY_STATE)
+                        defect_table = gr.Dataframe(
+                            value=[],
+                            headers=["#", "Label", "Confidence", "Box"],
+                            datatype=["str", "str", "str", "str"],
+                            type="array",
+                            label="Validated boxes",
+                            interactive=False,
+                            wrap=True,
+                            max_height=300,
                         )
-                        scan_dpi = gr.Dropdown(
-                            choices=RESOLUTION_OPTIONS,
-                            value=4000,
-                            label="Scan resolution (dpi)",
+                    with gr.Tab("History", id="history"):
+                        history_select = gr.Dropdown(
+                            choices=initial_choices,
+                            value=initial_value,
+                            label="Saved diagnosis",
+                            interactive=True,
                         )
-                    storage = gr.Radio(
-                        choices=STORAGE_OPTIONS,
-                        value=STORAGE_OPTIONS[0],
-                        label="Storage condition",
-                    )
-
-                run_btn = gr.Button("Diagnose scan", variant="primary", size="lg")
-
-            with gr.Column(scale=2):
-                with gr.Group(elem_classes="halide-card"):
-                    gr.Markdown('<div class="halide-section-title">Defect summary</div>')
-                    defect_summary = gr.HTML(
-                        value='<p style="color: var(--halide-slate);">Awaiting scan.</p>'
-                    )
-
-                with gr.Group(elem_classes="halide-card"):
-                    gr.Markdown('<div class="halide-section-title">Diagnosis & fixes</div>')
-                    diagnosis_output = gr.HTML(
-                        value='<p style="color: var(--halide-slate);">Awaiting scan.</p>'
-                    )
-
-                with gr.Group(elem_classes="halide-card"):
-                    gr.Markdown('<div class="halide-section-title">Session stats</div>')
-                    stats_output = gr.HTML(
-                        value='<p style="color: var(--halide-slate);">Awaiting scan.</p>'
-                    )
-
-            with gr.Column(scale=1):
-                with gr.Group(elem_classes="halide-card"):
-                    gr.Markdown('<div class="halide-section-title">Recent diagnoses</div>')
-                    history_output = gr.HTML(value=render_history(list_recent(limit=10)))
-                    refresh_btn = gr.Button("Refresh history", size="sm")
+                        refresh_btn = gr.Button("Refresh", size="sm")
+                        history_table = gr.Dataframe(
+                            value=initial_history_rows,
+                            headers=["Saved", "Film stock", "Defects", "Labels", "ID"],
+                            datatype=["str", "str", "str", "str", "str"],
+                            type="array",
+                            label="Recent diagnoses",
+                            interactive=False,
+                            wrap=True,
+                            max_height=260,
+                        )
+                        history_detail = gr.HTML(
+                            value=history_detail_html(selected_entry)
+                        )
+                        history_output = gr.HTML(
+                            value=history_html,
+                            elem_classes="halide-history-feed",
+                        )
+                    with gr.Tab("JSON", id="json"):
+                        raw_output = gr.Code(
+                            value="{}",
+                            language="json",
+                            label="Pipeline JSON",
+                            lines=18,
+                            max_lines=30,
+                            wrap_lines=True,
+                            buttons=["copy", "download"],
+                        )
 
         gr.HTML(
-            "<footer>Project Halide. Edge-native, no cloud APIs. "
-            "Vision: MiniCPM-V 4.6 (1.3B). Reasoning: Nemotron-Mini-4B-Instruct (few-shot).</footer>"
+            "<footer>Project Halide, open-weight film diagnostics. "
+            "Vision: MiniCPM-V 4.6. Reasoning: Nemotron-Mini-4B-Instruct.</footer>"
         )
 
         run_btn.click(
             fn=run_pipeline,
-            inputs=[image_input, film_type, film_age, storage, scan_dpi],
-            outputs=[stats_output, defect_summary, diagnosis_output, history_output],
+            inputs=[
+                image_input,
+                film_type,
+                film_age,
+                storage,
+                scan_dpi,
+                metadata_confidence,
+            ],
+            outputs=[
+                compare_output,
+                stats_output,
+                notice_output,
+                defect_summary,
+                diagnosis_output,
+                metadata_output,
+                raw_output,
+                defect_table,
+                history_output,
+                history_detail,
+                history_select,
+                history_table,
+            ],
         )
-        refresh_btn.click(fn=refresh_history, outputs=[history_output])
+        refresh_btn.click(
+            fn=refresh_history,
+            inputs=[history_select],
+            outputs=[history_select, history_output, history_detail, raw_output, history_table],
+        )
+        history_select.change(
+            fn=open_history,
+            inputs=[history_select],
+            outputs=[history_detail, raw_output],
+        )
 
     return app
 

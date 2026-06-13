@@ -13,6 +13,7 @@ def main() -> None:
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
     from ui.theme import THEME_CSS, build_theme
+
     app = build_app()
     app.queue(max_size=8).launch(
         server_name="0.0.0.0",
