@@ -1,8 +1,9 @@
 """Smoke test for the OpenBMB free MiniCPM-V 4.6 API.
 
-Endpoint documented in .nottracked/reference.md (Section 6):
+Endpoint:
   http://35.203.155.71:8003
-  Auth: Bearer sk-minicpm-V8bcD-YTAMxECagaKOnbwTCN69IN2LhSeqGiOgq2Ues
+Auth:
+  set OPENBMB_API_TOKEN in the environment
 
 Tests in order:
   1. health: GET /
@@ -18,14 +19,16 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import time
 from pathlib import Path
 
 import requests
 
 BASE = "http://35.203.155.71:8003"
-AUTH = "Bearer sk-minicpm-V8bcD-YTAMxECagaKOnbwTCN69IN2LhSeqGiOgq2Ues"
-ALT_AUTH = "sk-minicpm-V8bcD-YTAMxECagaKOnbwTCN69IN2LhSeqGiOgq2Ues"  # no Bearer
+TOKEN = os.getenv("OPENBMB_API_TOKEN", "")
+AUTH = f"Bearer {TOKEN}" if TOKEN else ""
+ALT_AUTH = TOKEN
 
 REPO = Path(__file__).resolve().parents[1]
 TEST_IMG = REPO / "data" / "test_images" / "02_ood_synthetic_scratch.png"
@@ -57,6 +60,9 @@ def header(label: str) -> None:
 
 
 def main() -> None:
+    if not TOKEN:
+        raise SystemExit("Set OPENBMB_API_TOKEN to run this opt-in API smoke test.")
+
     print(f"Endpoint: {BASE}")
     print(f"Image:    {TEST_IMG}  exists={TEST_IMG.exists()}")
 

@@ -7,9 +7,10 @@ http://127.0.0.1:7860 in your browser.
 Layout:
   [ Image picker (3 preloaded + upload) ]
   [ Run both ]  [ Run base only ]  [ Run finetuned only ]
-  [ Input image ]  [ Base panel  ]  [ Finetuned panel ]
-  [ Expected (GT, if in-dist)        ]
-  [ Status / timing                  ]
+  [ Input image ]  [ GT overlay  ]  [ Base overlay ]  [ Finetuned overlay ]
+  [ Base raw output ]  [ Finetuned raw output ]
+  [ Base parsed JSON ] [ Finetuned parsed JSON ]
+  [ Status / timing / ground-truth counts ]
 
 Run:
   python tests/view_inference.py
@@ -187,17 +188,129 @@ def _resolve(picker_value, uploaded):
     return None, None, "(none)"
 
 
+# Visual style per label: color (RGB) and line width
+_LABEL_STYLE = {
+    "dust":       ((255, 200, 60), 2),    # amber
+    "dirt":       ((200, 130, 40), 2),    # rust
+    "scratch":    ((255, 70, 70), 3),     # red, thicker (structural)
+    "long_hair":  ((180, 100, 255), 2),   # purple
+    "short_hair": ((100, 200, 255), 2),   # light blue
+}
+_DEFAULT_STYLE = ((255, 255, 255), 2)
+
+
+def _bbox_to_pixels(bbox, w, h):
+    """Convert bbox to pixel coords. Accepts int 0-999 grid or float 0-1."""
+    if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+        return None
+    vals = list(bbox)
+    if all(isinstance(v, (int, float)) and 0 <= v <= 1 for v in vals):
+        return [int(v * (w if i % 2 == 0 else h)) for i, v in enumerate(vals)]
+    if all(isinstance(v, (int, float)) and 0 <= v <= 999 for v in vals):
+        return [int(v / 999.0 * (w if i % 2 == 0 else h)) for i, v in enumerate(vals)]
+    return None
+
+
+def _draw_bboxes(pil, defects, title=None, max_boxes=300):
+    """Draw detected bboxes on a copy of the image. Returns PIL Image."""
+    from PIL import ImageDraw, ImageFont
+
+    if pil is None:
+        return None
+    img = pil.convert("RGB").copy()
+    draw = ImageDraw.Draw(img)
+    w, h = img.size
+    try:
+        font = ImageFont.load_default()
+    except Exception:
+        font = None
+
+    if title:
+        draw.text((6, 4), title, fill=(255, 255, 255), font=font, stroke_width=0)
+
+    n_total = len(defects) if isinstance(defects, list) else 0
+    n_drawn = 0
+    if isinstance(defects, list):
+        for d in defects:
+            if n_drawn >= max_boxes:
+                break
+            if not isinstance(d, dict):
+                continue
+            label = d.get("label", "?")
+            bbox = d.get("bbox")
+            pix = _bbox_to_pixels(bbox, w, h)
+            if not pix:
+                continue
+            x1, y1, x2, y2 = pix
+            color, lw = _LABEL_STYLE.get(label, _DEFAULT_STYLE)
+            draw.rectangle([x1, y1, x2, y2], outline=color, width=lw)
+            # label tag, top-left of bbox, with small background
+            tag = f"{label}"
+            tb = draw.textbbox((x1, max(0, y1 - 14)), tag, font=font) if font else (x1, y1, x1 + 40, y1)
+            draw.rectangle([tb[0], tb[1], tb[2], tb[3]], fill=(0, 0, 0))
+            draw.text((tb[0] + 1, tb[1] + 1), tag, fill=color, font=font)
+            n_drawn += 1
+    return img
+
+
+def _extract_defects(parsed) -> list:
+    if not isinstance(parsed, dict):
+        return []
+    if "defects" in parsed and isinstance(parsed["defects"], list):
+        return parsed["defects"]
+    return []
+
+
+def _overlay(pil, parsed, model_label):
+    if pil is None:
+        return None
+    defects = _extract_defects(parsed)
+    title = f"{model_label}: {len(defects)} defects"
+    return _draw_bboxes(pil, defects, title=title)
+
+
+def _gt_overlay(pil, fname, gt_map):
+    """Build GT overlay for in-distribution images. Defects read from training_data.jsonl."""
+    if pil is None or not fname or fname not in gt_map:
+        return None
+    gt_entry = gt_map[fname]
+    # Re-read annotations: this is heavier, so do it inline and only for the panel
+    if not TRAINING_DATA.exists():
+        return None
+    with TRAINING_DATA.open() as f:
+        for line in f:
+            row = json.loads(line)
+            if row.get("image") != fname:
+                continue
+            defects = [
+                {"label": a["label"], "bbox": a.get("bbox", [])}
+                for a in row.get("annotations", [])
+            ]
+            return _draw_bboxes(pil, defects, title=f"GT: {len(defects)} defects")
+    return None
+
+
 def _make_runner(gt_map):
-    """Build the 8-output list in one place. The output order is:
-    [overall, base_status, base_raw, base_parsed, ft_status, ft_raw, ft_parsed, gt_panel]
+    """Build the 12-output list in one place. The output order is:
+    [overall, input_img, gt_overlay, base_overlay, base_status, base_raw, base_parsed,
+     ft_overlay, ft_status, ft_raw, ft_parsed, gt_panel]
     and is shared with the click() handler and the error builders below.
     """
     # Single source of truth for the output schema
-    OUT = ["overall", "base_status", "base_raw", "base_parsed", "ft_status", "ft_raw", "ft_parsed", "gt_panel"]
+    OUT = [
+        "overall", "input_img", "gt_overlay",
+        "base_overlay", "base_status", "base_raw", "base_parsed",
+        "ft_overlay", "ft_status", "ft_raw", "ft_parsed",
+        "gt_panel",
+    ]
 
     def _result(d: dict) -> list:
-        """Build an 8-element list from a dict keyed by OUT names. Missing keys -> ''."""
-        return [d.get(k, "") for k in OUT]
+        """Build a 12-element list from a dict keyed by OUT names. Missing keys -> '' or None."""
+        out = []
+        for k in OUT:
+            v = d.get(k, None)
+            out.append(v if v is not None else None)
+        return out
 
     def run(which: str, picker, uploaded, progress=gr.Progress(track_tqdm=False)):
         _log(f"=== run start: which={which}, picker={picker}, uploaded={'yes' if uploaded is not None else 'no'}")
@@ -211,6 +324,11 @@ def _make_runner(gt_map):
                     "gt_panel": "_(no image)_",
                 })
 
+            input_img = pil.convert("RGB").copy()
+            gt_overlay = _gt_overlay(input_img, fname, gt_map)
+            base_overlay = _overlay(input_img, {}, "Base")
+            ft_overlay = _overlay(input_img, {}, "Finetuned")
+
             progress(0.1, desc="Uploading image to Modal volume...")
             remote, upload_status = _upload_to_modal_volume(pil, which)
             if not remote:
@@ -218,6 +336,10 @@ def _make_runner(gt_map):
                 return _result({
                     "overall": f"**Upload failed:** {upload_status}",
                     "base_status": f"**Upload failed:** {upload_status}",
+                    "input_img": input_img,
+                    "gt_overlay": gt_overlay,
+                    "base_overlay": base_overlay,
+                    "ft_overlay": ft_overlay,
                 })
 
             progress(0.3, desc=f"Calling Modal (T4 cold start ~30-60s, which={which})...")
@@ -232,6 +354,10 @@ def _make_runner(gt_map):
                 return _result({
                     "overall": f"**Modal call failed** (wall {wall}s): {err}",
                     "base_status": f"**Modal call failed:** {err}\n\n```\n{stderr}\n```",
+                    "input_img": input_img,
+                    "gt_overlay": gt_overlay,
+                    "base_overlay": base_overlay,
+                    "ft_overlay": ft_overlay,
                 })
 
             r = data["result"]
@@ -245,17 +371,26 @@ def _make_runner(gt_map):
                 base_info = {}
                 ft_info = r
 
+            base_parsed = base_info.get("parsed_json", {}) if base_info else {}
+            ft_parsed = ft_info.get("parsed_json", {}) if ft_info else {}
+            base_overlay = _overlay(input_img, base_parsed, "Base")
+            ft_overlay = _overlay(input_img, ft_parsed, "Finetuned")
+
             base_raw = base_info.get("raw_output", "") if base_info else ""
             ft_raw = ft_info.get("raw_output", "") if ft_info else ""
             _log(f"run: success, base_chars={len(base_raw)}, ft_chars={len(ft_raw)}")
             return _result({
                 "overall": f"### Run complete\n- input: {display}\n- remote_path: `{remote}`\n- {upload_status}\n- modal wall: {wall}s\n- modal_elapsed: {data.get('modal_elapsed')}s",
-                "base_status": _format_status("Base (`openbmb/MiniCPM-V-4_6`)", None, base_info),
+                "input_img": input_img,
+                "gt_overlay": gt_overlay,
+                "base_overlay": base_overlay,
+                "base_status": _format_status("Base (`openbmb/MiniCPM-V-4.6`)", None, base_info),
                 "base_raw": base_raw,
-                "base_parsed": json.dumps(base_info.get("parsed_json", {}), indent=2) if base_info else "{}",
-                "ft_status": _format_status("Finetuned (`Lonelyguyse1/halide-vision`)", None, ft_info),
+                "base_parsed": json.dumps(base_parsed, indent=2) if base_parsed else "{}",
+                "ft_overlay": ft_overlay,
+                "ft_status": _format_status("Finetuned (`halide-vision v3`)", None, ft_info),
                 "ft_raw": ft_raw,
-                "ft_parsed": json.dumps(ft_info.get("parsed_json", {}), indent=2) if ft_info else "{}",
+                "ft_parsed": json.dumps(ft_parsed, indent=2) if ft_parsed else "{}",
                 "gt_panel": _format_gt(fname, gt_map),
             })
         except Exception as exc:
@@ -265,6 +400,10 @@ def _make_runner(gt_map):
             return _result({
                 "overall": f"**Exception:** {type(exc).__name__}: {exc}",
                 "base_status": f"**Exception:** {type(exc).__name__}: {exc}\n\n```\n{tb}\n```",
+                "input_img": input_img if 'input_img' in locals() else None,
+                "gt_overlay": gt_overlay if 'gt_overlay' in locals() else None,
+                "base_overlay": base_overlay if 'base_overlay' in locals() else None,
+                "ft_overlay": ft_overlay if 'ft_overlay' in locals() else None,
             })
 
     return run
@@ -295,6 +434,12 @@ def main():
         overall = gr.Markdown(value="_results will appear here_")
 
         with gr.Row():
+            input_img = gr.Image(type="pil", label="Input (no boxes)", height=320, interactive=False)
+            gt_overlay = gr.Image(type="pil", label="GT overlay (in-dist only)", height=320, interactive=False)
+            base_overlay = gr.Image(type="pil", label="Base + boxes", height=320, interactive=False)
+            ft_overlay = gr.Image(type="pil", label="Finetuned v3 + boxes", height=320, interactive=False)
+
+        with gr.Row():
             base_status = gr.Markdown(value="_base not run_")
             ft_status = gr.Markdown(value="_finetuned not run_")
         with gr.Row():
@@ -306,7 +451,12 @@ def main():
 
         gt_panel = gr.Markdown(value="_ground truth will appear here_")
 
-        outputs = [overall, base_status, base_raw, base_parsed, ft_status, ft_raw, ft_parsed, gt_panel]
+        outputs = [
+            overall, input_img, gt_overlay,
+            base_overlay, base_status, base_raw, base_parsed,
+            ft_overlay, ft_status, ft_raw, ft_parsed,
+            gt_panel,
+        ]
         btn_both.click(lambda p, u: runner("both", p, u), inputs=[picker, upload], outputs=outputs)
         btn_base.click(lambda p, u: runner("base", p, u), inputs=[picker, upload], outputs=outputs)
         btn_ft.click(lambda p, u: runner("finetuned", p, u), inputs=[picker, upload], outputs=outputs)

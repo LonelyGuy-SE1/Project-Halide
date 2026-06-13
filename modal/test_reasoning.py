@@ -1,8 +1,8 @@
 """Modal T4 backend for testing the Nemotron reasoning model.
 
 Mirrors the architecture of modal/view_inference.py but for the second stage
-of the pipeline. Takes a defect summary dict, builds the few-shot message
-array via inline prompts, and generates a diagnosis.
+of the pipeline. Takes a defect summary dict, builds the production few-shot
+message array, and generates a diagnosis.
 
 The test uses the known-broken vision output (default-bbox hallucination)
 to verify the Nemotron wrapper correctly ingests the structured messages
@@ -20,177 +20,54 @@ import time
 
 import modal
 
+from models.reasoning.prompts import build_messages as build_reasoning_messages
+
 app = modal.App("halide-reasoning-test")
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
-        "torch==2.5.0",
-        "transformers==4.48.0",
-        "accelerate==1.2.0",
+        "transformers[torch]==5.7.0",
+        "accelerate>=1.8.0",
         "safetensors",
     )
+    .add_local_python_source("models")
 )
 
 NEMOTRON_MODEL_ID = "nvidia/Nemotron-Mini-4B-Instruct"
 
 
-SYSTEM_PROMPT = (
-    "You are a senior analog film lab technician with 30 years of experience "
-    "in darkroom printing, negative inspection, and equipment repair. You are "
-    "diagnosing the physical root cause of degradation in a film scan and "
-    "prescribing specific, actionable physical fixes a lab can perform."
-)
+def build_chat_inputs(tokenizer, messages, device):
+    """Return generate kwargs across Transformers chat-template variants."""
+    try:
+        encoded = tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            return_tensors="pt",
+            return_dict=True,
+        )
+    except TypeError:
+        encoded = tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            return_tensors="pt",
+        )
+
+    if hasattr(encoded, "to"):
+        encoded = encoded.to(device)
+
+    if has_input_ids(encoded):
+        input_ids = encoded["input_ids"]
+        return dict(encoded), input_ids.shape[-1]
+
+    return {"input_ids": encoded}, encoded.shape[-1]
 
 
-FEW_SHOT_EXAMPLES = [
-    {
-        "role": "user",
-        "content": (
-            "## Defect report\n"
-            "{\n"
-            '  "film_type": "Kodak Portra 400 (35mm)",\n'
-            '  "film_age_years": 2,\n'
-            '  "storage": "fridge, sealed",\n'
-            '  "defects": [\n'
-            '    {"label": "dust", "bbox_count": 87},\n'
-            '    {"label": "dirt", "bbox_count": 12}\n'
-            '  ],\n'
-            '  "scan_resolution_dpi": 4000\n'
-            "}\n\n"
-            "What is the root cause and what physical fixes do you recommend?"
-        ),
-    },
-    {
-        "role": "assistant",
-        "content": (
-            "## Root cause\n"
-            "High dust and dirt count on a recently-shot, properly stored roll "
-            "indicates contamination accumulated on the negative during "
-            "scanning, not deterioration of the film itself. The scanner's "
-            "dust-removal hardware (ICE/DEEP) is either disabled or "
-            "ineffective at 4000 dpi.\n\n"
-            "## Physical fixes\n"
-            "1. Clean the scanner glass and film holder with an anti-static "
-            "cloth and PEC*PAD swabs; re-scan.\n"
-            "2. Enable hardware-based dust removal in the scanner software "
-            "(e.g., Digital ICE for Kodak, DEEP for Noritsu) at a moderate "
-            "strength (level 3 of 5).\n"
-            "3. If hardware removal is unavailable, apply careful digital "
-            "spotting in Photoshop using the healing brush; budget 30-60 "
-            "minutes per frame.\n"
-            "4. Inspect the original negative under a loupe for any residual "
-            "physical particles and gently blow off with a rocket air blower "
-            "before re-scanning."
-        ),
-    },
-    {
-        "role": "user",
-        "content": (
-            "## Defect report\n"
-            "{\n"
-            '  "film_type": "Ilford HP5 (120 medium format)",\n'
-            '  "film_age_years": 15,\n'
-            '  "storage": "shoe box, attic",\n'
-            '  "defects": [\n'
-            '    {"label": "long_hair", "bbox_count": 4},\n'
-            '    {"label": "scratch", "bbox_count": 1}\n'
-            '  ],\n'
-            '  "scan_resolution_dpi": 3200\n'
-            "}\n\n"
-            "What is the root cause and what physical fixes do you recommend?"
-        ),
-    },
-    {
-        "role": "assistant",
-        "content": (
-            "## Root cause\n"
-            "Long hair and scratches on an aged, poorly stored roll indicate "
-            "physical abrasion from dust and debris inside the storage "
-            "container. Attic storage subjects film to temperature and "
-            "humidity swings that warp the emulsion and make it brittle.\n\n"
-            "## Physical fixes\n"
-            "1. Inspect the negative under a 10x loupe to confirm hair is on "
-            "the emulsion side (matte) vs. base side (glossy). Emulsion-side "
-            "hair cannot be wet-wiped safely.\n"
-            "2. If base-side only: gently wipe with a PEC*PAD soaked in "
-            "Edwal Negative Cleaner, then PEC*PAD with distilled water, "
-            "then dry.\n"
-            "3. If emulsion-side: do not wipe. Use Print File archival "
-            "sleeves and ship to a lab with wet-mount scanning (e.g., "
-            "Northcoast Photographic).\n"
-            "4. The single scratch is most likely from a dirty film "
-            "transport. Have the scanner cleaned and the film path "
-            "inspected; consider wet-gate scanning to mask the scratch.\n"
-            "5. Long-term: transfer remaining unexposed rolls to a "
-            "freezer at -18C in sealed bags with desiccant."
-        ),
-    },
-    {
-        "role": "user",
-        "content": (
-            "## Defect report\n"
-            "{\n"
-            '  "film_type": "CineStill 800T (35mm)",\n'
-            '  "film_age_years": 0,\n'
-            '  "storage": "fresh, refrigerated by manufacturer",\n'
-            '  "defects": [\n'
-            '    {"label": "dust", "bbox_count": 156},\n'
-            '    {"label": "dirt", "bbox_count": 23},\n'
-            '    {"label": "short_hair", "bbox_count": 8}\n'
-            '  ],\n'
-            '  "scan_resolution_dpi": 6000\n'
-            "}\n\n"
-            "What is the root cause and what physical fixes do you recommend?"
-        ),
-    },
-    {
-        "role": "assistant",
-        "content": (
-            "## Root cause\n"
-            "Excessive dust and dirt on a brand-new refrigerated roll at 6000 "
-            "dpi scan suggests a combination of (a) the static-prone "
-            "CineStill base attracting particles during loading, and (b) "
-            "scanner-side contamination. The hair count points to the "
-            "scanner's film transport path.\n\n"
-            "## Physical fixes\n"
-            "1. Anti-static treatment is critical for CineStill: discharge "
-            "the negative with a Zerostat gun on low setting 30 cm from the "
-            "film before scanning.\n"
-            "2. Clean the scanner glass, film holder, and feed rollers with "
-            "PEC*PAD swabs and reagent-grade isopropyl alcohol.\n"
-            "3. Use a static-discharge ionizing bar (e.g., Simco-Ion) at the "
-            "scanner input if available.\n"
-            "4. Re-scan with hardware dust removal at level 4 of 5. "
-            "CineStill's halated emulsion responds well to Digital ICE.\n"
-            "5. For the short hairs, inspect the film path under magnification "
-            "and remove any visible lint from the rollers with tweezers."
-        ),
-    },
-]
-
-
-def build_messages(film_type, film_age_years, storage, scan_resolution_dpi, defect_summary, total_defects):
-    payload = {
-        "film_type": film_type,
-        "film_age_years": film_age_years,
-        "storage": storage,
-        "defects": [
-            {"label": label, "bbox_count": count}
-            for label, count in sorted(defect_summary.items())
-        ],
-        "scan_resolution_dpi": scan_resolution_dpi,
-        "total_defect_count": total_defects,
-    }
-    user_msg = (
-        "## Defect report\n"
-        f"{json.dumps(payload, indent=2)}\n\n"
-        "What is the root cause and what physical fixes do you recommend?"
-    )
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    messages.extend(FEW_SHOT_EXAMPLES)
-    messages.append({"role": "user", "content": user_msg})
-    return messages
+def has_input_ids(encoded) -> bool:
+    try:
+        return "input_ids" in encoded
+    except (TypeError, RuntimeError):
+        return False
 
 
 @app.function(
@@ -206,9 +83,10 @@ def run_reasoning_all(scenarios: list[dict]) -> list[dict]:
 
     t0 = time.time()
     tokenizer = AutoTokenizer.from_pretrained(NEMOTRON_MODEL_ID)
+    dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
     model = AutoModelForCausalLM.from_pretrained(
         NEMOTRON_MODEL_ID,
-        torch_dtype=torch.bfloat16,
+        torch_dtype=dtype,
         device_map="auto",
     )
     device = str(next(model.parameters()).device)
@@ -218,26 +96,29 @@ def run_reasoning_all(scenarios: list[dict]) -> list[dict]:
     for s in scenarios:
         t1 = time.time()
         total = sum(s["defect_summary"].values())
-        messages = build_messages(
+        messages = build_reasoning_messages(
             film_type=s["film_type"],
             film_age_years=s["film_age_years"],
             storage=s["storage"],
             scan_resolution_dpi=s["scan_resolution_dpi"],
             defect_summary=s["defect_summary"],
             total_defects=total,
+            spatial_evidence=s.get("spatial_evidence", {}),
         )
-        input_ids = tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, return_tensors="pt"
-        ).to(device)
+        inputs, prompt_length = build_chat_inputs(tokenizer, messages, device)
         with torch.inference_mode():
             output = model.generate(
-                input_ids,
+                **inputs,
                 max_new_tokens=768,
                 do_sample=False,
                 pad_token_id=tokenizer.eos_token_id,
             )
-        response_ids = output[0][input_ids.shape[-1]:]
-        text = tokenizer.decode(response_ids, skip_special_tokens=True)
+        response_ids = output[0][prompt_length:]
+        text = tokenizer.decode(
+            response_ids,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
         gen_s = round(time.time() - t1, 2)
         results.append({
             "scenario_name": s["name"],

@@ -1,4 +1,4 @@
-"""Create a private HF Hub repo for the merged MiniCPM-V 4.6 model and upload.
+"""Create or update the HF Hub repo for the merged MiniCPM-V 4.6 model.
 
 Idempotent: re-running will not fail if the repo already exists.
 """
@@ -11,19 +11,19 @@ from pathlib import Path
 
 from huggingface_hub import HfApi, create_repo
 
-REPO_ID = "Lonelyguyse1/halide-vision"
+REPO_ID = os.getenv("HALIDE_UPLOAD_REPO_ID", "Lonelyguyse1/halide-vision")
 LOCAL_DIR = Path(
-    "C:/Users/Admin/Desktop/Methuselah/Projects/Project-Halide/checkpoints/minicpm-v-4.6-merged"
+    "C:/Users/Admin/Desktop/Methuselah/Projects/Project-Halide/checkpoints/minicpm-v-4.6-merged-v3"
 )
 
 
 def main() -> int:
     api = HfApi()
-    print(f"Ensuring repo {REPO_ID} exists (private)")
+    print(f"Ensuring repo {REPO_ID} exists")
     create_repo(
         repo_id=REPO_ID,
         repo_type="model",
-        private=True,
+        private=False,
         exist_ok=True,
         token=os.getenv("HF_TOKEN"),
     )

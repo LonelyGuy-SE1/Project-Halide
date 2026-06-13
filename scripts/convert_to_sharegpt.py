@@ -37,9 +37,8 @@ from pathlib import Path
 INPUT_JSONL = Path(__file__).parent.parent / "data" / "training_data.jsonl"
 OUTPUT_TRAIN = Path(__file__).parent.parent / "data" / "training_sharegpt.json"
 OUTPUT_VAL = Path(__file__).parent.parent / "data" / "training_sharegpt_val.json"
-SCANS_DIR = Path("scans")  # Relative path for LLaMA-Factory
 
-# Cap defects per scan so responses fit in cutoff_len=3072.
+# Cap defects per scan so responses fit in cutoff_len=4096.
 # 150 defects * ~25 tokens/defect (int 0-999 format) = ~3750 tokens for response
 # Plus ~600 tokens for system + image placeholder = ~4350 total
 # cutoff_len 4096 with int 0-999 format
@@ -53,18 +52,50 @@ DEFAULT_HOLDOUT = ["Scan (8).jpg", "Scan (9).jpg"]
 
 SYSTEM_PROMPT_INT = (
     "You are a film defect detection engine. Analyze the film scan and detect "
-    "all visible defects. Output a JSON object with a 'defects' array. Each "
-    "defect has: 'label' (dust, dirt, scratch, long_hair, short_hair), "
+    "only physical defects that are on the film, scanner glass, holder, or "
+    "scan surface. The image may be a positive film scan of an ordinary scene, "
+    "a negative, a slide, a contact sheet, or a film scanner output. Detect "
+    "defects that appear as dust spots, dirt blobs, thin abrasion lines, "
+    "hair-like overlays, emulsion loss, chemical stains, or light leaks on "
+    "top of the photographed content. If no clear "
+    "surface artifact is visible, return {\"defects\": []}. Do not label "
+    "subject matter as defects. Do not label grass, tree branches, eyelashes, "
+    "fabric fibers, texture, grain, wires, shadows, printed text, or real hair "
+    "inside the photographed scene as long_hair or short_hair. Use scratch "
+    "only for thin physical abrasion or scan-surface lines, not object edges, "
+    "stems, typography, or composition lines. Output a JSON object with a "
+    "'defects' array. Each defect has: "
+    "'label' (dust, dirt, scratch, long_hair, short_hair, emulsion_damage, "
+    "chemical_stain, light_leak), "
+    "optional 'confidence' from 0.0 to 1.0, "
     "'bbox' as 4 integers in the [0, 999] grid "
     "[x_min, y_min, x_max, y_max] (multiply by image width/height to get pixels). "
+    "Return at most 150 defects. Prefer the clearest defects. Do not repeat "
+    "the same label and bbox. If uncertain, return an empty defects array. "
     "Output JSON only, no explanation."
 )
 
 SYSTEM_PROMPT_FLOAT = (
     "You are a film defect detection engine. Analyze the film scan and detect "
-    "all visible defects. Output a JSON object with a 'defects' array. Each "
-    "defect has: 'label' (dust, dirt, scratch, long_hair, short_hair), "
+    "only physical defects that are on the film, scanner glass, holder, or "
+    "scan surface. The image may be a positive film scan of an ordinary scene, "
+    "a negative, a slide, a contact sheet, or a film scanner output. Detect "
+    "defects that appear as dust spots, dirt blobs, thin abrasion lines, "
+    "hair-like overlays, emulsion loss, chemical stains, or light leaks on "
+    "top of the photographed content. If no clear "
+    "surface artifact is visible, return {\"defects\": []}. Do not label "
+    "subject matter as defects. Do not label grass, tree branches, eyelashes, "
+    "fabric fibers, texture, grain, wires, shadows, printed text, or real hair "
+    "inside the photographed scene as long_hair or short_hair. Use scratch "
+    "only for thin physical abrasion or scan-surface lines, not object edges, "
+    "stems, typography, or composition lines. Output a JSON object with a "
+    "'defects' array. Each defect has: "
+    "'label' (dust, dirt, scratch, long_hair, short_hair, emulsion_damage, "
+    "chemical_stain, light_leak), "
+    "optional 'confidence' from 0.0 to 1.0, "
     "'bbox' (normalized [x_min, y_min, x_max, y_max] from 0.0 to 1.0). "
+    "Return at most 150 defects. Prefer the clearest defects. Do not repeat "
+    "the same label and bbox. If uncertain, return an empty defects array. "
     "Output JSON only, no explanation."
 )
 
@@ -124,12 +155,20 @@ def convert_bbox(bbox: list, fmt: str) -> list:
         raise ValueError(f"unknown bbox format: {fmt}")
 
 
-def convert_entry(raw: dict, fmt: str) -> dict:
+def build_image_ref(image_name: str, image_prefix: str) -> str:
+    normalized = image_name.replace("\\", "/")
+    prefix = image_prefix.strip("/")
+    if prefix:
+        return f"{prefix}/{normalized}"
+    return normalized
+
+
+def convert_entry(raw: dict, fmt: str, max_defects: int, image_prefix: str) -> dict:
     """Convert one JSONL entry to ShareGPT format."""
     image_name = raw["image"]
     annotations = raw["annotations"]
 
-    capped_annotations = cap_defects(annotations, MAX_DEFECTS_PER_SCAN)
+    capped_annotations = cap_defects(annotations, max_defects)
     if len(annotations) > len(capped_annotations):
         print(
             f"  {image_name}: capped {len(annotations)} -> {len(capped_annotations)} defects"
@@ -151,12 +190,24 @@ def convert_entry(raw: dict, fmt: str) -> dict:
             {"from": "human", "value": f"<image>{system_prompt}"},
             {"from": "gpt", "value": response_json},
         ],
-        "images": ["scans/" + image_name],
+        "images": [build_image_ref(image_name, image_prefix)],
     }
 
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--input", default=str(INPUT_JSONL),
+                        help="Input Halide JSONL annotations")
+    parser.add_argument("--output-train", default=str(OUTPUT_TRAIN),
+                        help="Output ShareGPT train JSON")
+    parser.add_argument("--output-val", default=str(OUTPUT_VAL),
+                        help="Output ShareGPT val JSON")
+    parser.add_argument("--image-prefix", default="scans",
+                        help="Prefix for image paths in LLaMA-Factory data dir")
+    parser.add_argument("--max-defects", type=int, default=MAX_DEFECTS_PER_SCAN,
+                        help="Cap defects per image")
+    parser.add_argument("--no-val", action="store_true",
+                        help="Write all rows to train and an empty val file")
     parser.add_argument("--format", choices=["int_0_999", "float_0_1"],
                         default="int_0_999",
                         help="Bounding box format (default: int_0_999)")
@@ -166,31 +217,43 @@ def main():
 
     print("=== Converting to ShareGPT Format ===\n")
     print(f"Format: {args.format}")
-    print(f"Cap: {MAX_DEFECTS_PER_SCAN} defects per scan")
-    print(f"Holdout: {args.holdout}\n")
+    print(f"Input: {args.input}")
+    print(f"Image prefix: {args.image_prefix!r}")
+    print(f"Cap: {args.max_defects} defects per scan")
+    print(f"Holdout: {args.holdout if not args.no_val else '(disabled)'}\n")
 
-    with open(INPUT_JSONL) as f:
+    with open(args.input) as f:
         raw_data = [json.loads(line) for line in f]
 
-    print(f"Loaded {len(raw_data)} entries from {INPUT_JSONL}")
+    print(f"Loaded {len(raw_data)} entries from {args.input}")
 
-    holdout_set = set(args.holdout)
+    holdout_set = set() if args.no_val else set(args.holdout)
     train_entries = [r for r in raw_data if r["image"] not in holdout_set]
     val_entries = [r for r in raw_data if r["image"] in holdout_set]
 
     print(f"  train: {len(train_entries)} scans")
     print(f"  val:   {len(val_entries)} scans")
 
-    train_sharegpt = [convert_entry(e, args.format) for e in train_entries]
-    val_sharegpt = [convert_entry(e, args.format) for e in val_entries]
+    train_sharegpt = [
+        convert_entry(e, args.format, args.max_defects, args.image_prefix)
+        for e in train_entries
+    ]
+    val_sharegpt = [
+        convert_entry(e, args.format, args.max_defects, args.image_prefix)
+        for e in val_entries
+    ]
 
-    with open(OUTPUT_TRAIN, "w") as f:
+    output_train = Path(args.output_train)
+    output_train.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_train, "w") as f:
         json.dump(train_sharegpt, f, indent=2)
-    print(f"\nWrote {len(train_sharegpt)} train entries to {OUTPUT_TRAIN}")
+    print(f"\nWrote {len(train_sharegpt)} train entries to {output_train}")
 
-    with open(OUTPUT_VAL, "w") as f:
+    output_val = Path(args.output_val)
+    output_val.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_val, "w") as f:
         json.dump(val_sharegpt, f, indent=2)
-    print(f"Wrote {len(val_sharegpt)} val entries to {OUTPUT_VAL}")
+    print(f"Wrote {len(val_sharegpt)} val entries to {output_val}")
 
     def total_defects(entries):
         return sum(e["conversations"][1]["value"].count('"label"') for e in entries)
@@ -198,9 +261,10 @@ def main():
     print(f"\nTotal defects in train: {total_defects(train_sharegpt)}")
     print(f"Total defects in val:   {total_defects(val_sharegpt)}")
 
-    print("\nSample train entry (first conversation only):")
-    print(f"  Human: {train_sharegpt[0]['conversations'][0]['value'][:100]}...")
-    print(f"  GPT: {train_sharegpt[0]['conversations'][1]['value'][:200]}...")
+    if train_sharegpt:
+        print("\nSample train entry (first conversation only):")
+        print(f"  Human: {train_sharegpt[0]['conversations'][0]['value'][:100]}...")
+        print(f"  GPT: {train_sharegpt[0]['conversations'][1]['value'][:200]}...")
 
 
 if __name__ == "__main__":

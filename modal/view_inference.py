@@ -30,18 +30,37 @@ image = (
 )
 
 viewer_volume = modal.Volume.from_name("halide-viewer-uploads", create_if_missing=True)
+checkpoint_volume = modal.Volume.from_name("halide-checkpoints", create_if_missing=True)
 
 PROMPT = (
     "You are a film defect detection engine. Analyze the film scan and detect "
-    "all visible defects. Output a JSON object with a 'defects' array. Each "
-    "defect has: 'label' (dust, dirt, scratch, long_hair, short_hair), 'bbox' "
-    "(normalized [x_min, y_min, x_max, y_max] from 0.0 to 1.0). Output JSON "
-    "only, no explanation."
+    "only physical defects that are on the film, scanner glass, holder, or "
+    "scan surface. The image may be a positive film scan of an ordinary scene, "
+    "a negative, a slide, a contact sheet, or a film scanner output. Detect "
+    "defects that appear as dust spots, dirt blobs, thin abrasion lines, "
+    "hair-like overlays, emulsion loss, chemical stains, or light leaks on "
+    "top of the photographed content. If no clear "
+    "surface artifact is visible, return {\"defects\": []}. Do not label "
+    "subject matter as defects. Do not label grass, tree branches, eyelashes, "
+    "fabric fibers, texture, grain, wires, shadows, printed text, or real hair "
+    "inside the photographed scene as long_hair or short_hair. Use scratch "
+    "only for thin physical abrasion or scan-surface lines, not object edges, "
+    "stems, typography, or composition lines. Output a JSON object with a "
+    "'defects' array. Each defect has: "
+    "'label' (dust, dirt, scratch, long_hair, short_hair, emulsion_damage, "
+    "chemical_stain, light_leak), "
+    "optional 'confidence' from 0.0 to 1.0, "
+    "'bbox' as 4 integers in the [0, 999] grid "
+    "[x_min, y_min, x_max, y_max] (multiply by image width/height to get pixels). "
+    "Return at most 150 defects. Prefer the clearest defects. Do not repeat "
+    "the same label and bbox. If uncertain, return an empty defects array. "
+    "Output JSON only, no explanation."
 )
 
 MODELS = {
-    "base": "openbmb/MiniCPM-V-4_6",
-    "finetuned": "Lonelyguyse1/halide-vision",
+    "base": "openbmb/MiniCPM-V-4.6",
+    # v3 finetune, combined original + balanced augmented data.
+    "finetuned": "/checkpoints/minicpm-v-4.6-merged-v3",
 }
 
 
@@ -86,15 +105,34 @@ def _parse(text: str) -> dict:
     text = text.strip()
     try:
         return json.loads(text)
-    except Exception:
+    except json.JSONDecodeError:
         pass
     m = re.search(r"\{[\s\S]*\}", text)
     if m:
         try:
             return json.loads(m.group(0))
-        except Exception as exc:
+        except json.JSONDecodeError as exc:
+            fragments = _parse_defect_fragments(text)
+            if fragments:
+                return {
+                    "defects": fragments,
+                    "_parse_error": str(exc),
+                    "_parse_warning": "salvaged_defect_fragments",
+                }
             return {"_parse_error": str(exc), "_raw": text}
     return {"_parse_error": "no_json_object", "_raw": text}
+
+
+def _parse_defect_fragments(text: str) -> list[dict]:
+    fragments = []
+    for match in re.finditer(r"\{[^{}]*\"label\"[^{}]*\"bbox\"\s*:\s*\[[^\]]+\][^{}]*\}", text):
+        try:
+            candidate = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict):
+            fragments.append(candidate)
+    return fragments
 
 
 def _inference_for(model_key: str, image_path: str) -> dict:
@@ -105,8 +143,9 @@ def _inference_for(model_key: str, image_path: str) -> dict:
     model_id = MODELS[model_key]
     t0 = time.time()
     processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+    dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
     model = AutoModelForImageTextToText.from_pretrained(
-        model_id, torch_dtype=torch.bfloat16, device_map="auto", trust_remote_code=True
+        model_id, torch_dtype=dtype, device_map="auto", trust_remote_code=True
     )
     device = str(next(model.parameters()).device)
     load_seconds = round(time.time() - t0, 2)
@@ -135,7 +174,7 @@ def _inference_for(model_key: str, image_path: str) -> dict:
 @app.function(
     image=image,
     gpu="T4",
-    volumes={"/uploads": viewer_volume},
+    volumes={"/uploads": viewer_volume, "/checkpoints": checkpoint_volume},
     secrets=[modal.Secret.from_name("huggingface-secret")],
     timeout=15 * 60,
 )
@@ -146,7 +185,7 @@ def run_base(image_path: str) -> dict:
 @app.function(
     image=image,
     gpu="T4",
-    volumes={"/uploads": viewer_volume},
+    volumes={"/uploads": viewer_volume, "/checkpoints": checkpoint_volume},
     secrets=[modal.Secret.from_name("huggingface-secret")],
     timeout=15 * 60,
 )
@@ -157,7 +196,7 @@ def run_finetuned(image_path: str) -> dict:
 @app.function(
     image=image,
     gpu="T4",
-    volumes={"/uploads": viewer_volume},
+    volumes={"/uploads": viewer_volume, "/checkpoints": checkpoint_volume},
     secrets=[modal.Secret.from_name("huggingface-secret")],
     timeout=15 * 60,
 )

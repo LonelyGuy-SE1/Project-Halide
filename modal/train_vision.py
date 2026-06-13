@@ -7,7 +7,6 @@ Per log.txt directive (2026-06-06):
   - lora_alpha: 128
   - lora_target: q_proj,v_proj,k_proj,o_proj (vision tower + language)
   - num_train_epochs: 50
-  - early_stopping_patience: 5 (terminates if eval_loss stagnates for 5 evals)
   - bbox format: integer [0, 999] grid (aligned with VLM pre-training)
 """
 import modal
@@ -61,8 +60,8 @@ def train(
     max_samples: int = 1000,
     max_seq_length: int = 4096,
     output_dir: str = "/checkpoints/minicpm-v-4.6-lora-v2",
-    early_stopping_patience: int = 5,
-    eval_steps: int = 2,
+    train_json_path: str = "/data/training_sharegpt.json",
+    val_json_path: str = "/data/training_sharegpt_val.json",
 ):
     """
     Run LoRA fine-tuning on MiniCPM-V 4.6 with vision tower targeting.
@@ -72,8 +71,16 @@ def train(
       - target q_proj,v_proj,k_proj,o_proj (covers both SigLIP2-400M vision
         tower and Qwen3.5-0.8B language backbone; both module types share
         these names)
-      - 50 epochs, early stop patience 5
+      - 50 epochs
       - integer [0, 999] bbox grid format
+
+    Note on early stopping: LLaMA-Factory v0.9.5's HfArgumentParser rejects
+    the standard HuggingFace `early_stopping_patience` /
+    `early_stopping_threshold` keys when passed via custom YAML. We use
+    `load_best_model_at_end: true` + `metric_for_best_model: eval_loss`
+    so the best checkpoint (lowest eval_loss) is kept at termination;
+    if eval_loss diverges or hits NaN, kill the modal subprocess
+    manually and the best checkpoint so far is preserved.
 
     Uses A100-80GB because T4 (16GB) is insufficient for MiniCPM-V 4.6 training.
     """
@@ -85,7 +92,9 @@ def train(
     print(f"GPU: A100-80GB | Epochs: {epochs} | LR: {learning_rate}")
     print(f"LoRA: rank={lora_rank}, alpha={lora_alpha}, target={lora_target}")
     print(f"cutoff_len: {max_seq_length} (fits 150 defects in int 0-999 format)")
-    print(f"Early stopping: patience={early_stopping_patience}, eval every {eval_steps} epochs")
+    print(f"train_json_path: {train_json_path}")
+    print(f"val_json_path: {val_json_path}")
+    print(f"Best-model-at-end: enabled, save + eval strategy: epoch")
 
     # Step 1: Register both train and val datasets in LLaMA-Factory
     import json
@@ -98,8 +107,11 @@ def train(
     else:
         dataset_info = {}
 
+    train_json_name = Path(train_json_path).name
+    val_json_name = Path(val_json_path).name
+
     dataset_info["halide_film_defects"] = {
-        "file_name": "training_sharegpt.json",
+        "file_name": train_json_name,
         "formatting": "sharegpt",
         "columns": {
             "messages": "conversations",
@@ -107,7 +119,7 @@ def train(
         },
     }
     dataset_info["halide_film_defects_val"] = {
-        "file_name": "training_sharegpt_val.json",
+        "file_name": val_json_name,
         "formatting": "sharegpt",
         "columns": {
             "messages": "conversations",
@@ -122,21 +134,24 @@ def train(
 
     # Step 2: Copy data to LLaMA-Factory data directory
     import shutil
-    shutil.copy("/data/training_sharegpt.json",
-                "/root/LLaMA-Factory/data/training_sharegpt.json")
-    shutil.copy("/data/training_sharegpt_val.json",
-                "/root/LLaMA-Factory/data/training_sharegpt_val.json")
+    shutil.copy(train_json_path, str(dataset_dir / train_json_name))
+    shutil.copy(val_json_path, str(dataset_dir / val_json_name))
 
     scans_src = Path("/data/scans")
     scans_dst = Path("/root/LLaMA-Factory/data/scans")
     if scans_src.exists():
         shutil.copytree(scans_src, scans_dst, dirs_exist_ok=True)
 
+    augmented_src = Path("/data/augmented")
+    augmented_dst = Path("/root/LLaMA-Factory/data/augmented")
+    if augmented_src.exists():
+        shutil.copytree(augmented_src, augmented_dst, dirs_exist_ok=True)
+
     print("Copied data to LLaMA-Factory directory")
 
     # Step 3: Write YAML config
     config_yaml = f"""
-model_name_or_path: openbmb/MiniCPM-V-4_6
+model_name_or_path: openbmb/MiniCPM-V-4.6
 image_max_pixels: 262144
 trust_remote_code: true
 
@@ -171,15 +186,15 @@ save_total_limit: 3
 report_to: none
 save_only_model: false
 
-# Early stopping + best model selection
+# Best-model-at-end: keeps the checkpoint with the lowest eval_loss when
+# training terminates. No early stopping keys (LLaMA-Factory v0.9.5's
+# HfArgumentParser rejects them). Manual monitor for eval_loss divergence
+# or NaN; kill subprocess if needed.
 load_best_model_at_end: true
 metric_for_best_model: eval_loss
 greater_is_better: false
-early_stopping_patience: {early_stopping_patience}
-early_stopping_threshold: 0.0
 
 eval_strategy: epoch
-eval_steps: {eval_steps}
 
 output_dir: {output_dir}
 """
@@ -230,7 +245,7 @@ def export_model(
     print("=== Exporting Merged Model ===")
 
     config_yaml = f"""
-model_name_or_path: openbmb/MiniCPM-V-4_6
+model_name_or_path: openbmb/MiniCPM-V-4.6
 adapter_name_or_path: {checkpoint_path}
 template: minicpm_v_4_6
 finetuning_type: lora
@@ -262,14 +277,45 @@ export_legacy_format: false
 
 
 @app.local_entrypoint()
-def main(epochs: int = 50, do_export: bool = True):
+def main(
+    epochs: int = 50,
+    do_export: bool = True,
+    train_json_path: str = "/data/training_sharegpt.json",
+    val_json_path: str = "/data/training_sharegpt_val.json",
+    output_dir: str = "/checkpoints/minicpm-v-4.6-lora-v2",
+    merged_output_dir: str = "/checkpoints/minicpm-v-4.6-merged-v2",
+):
     """Run training (and optional export) on Modal A100-80GB.
 
-    Per log.txt (2026-06-06) directive: rank 64, alpha 128, vision_tower
-    targets, 50 epochs with early stopping patience 5.
+    Per log.txt (2026-06-06) directive: rank 64, alpha 128, vision tower
+    targets, 50 epochs, best model selected by eval loss.
     """
-    output = train.remote(epochs=epochs)
+    output = train.remote(
+        epochs=epochs,
+        train_json_path=train_json_path,
+        val_json_path=val_json_path,
+        output_dir=output_dir,
+    )
     print(f"\nTraining output: {output}\n")
+    if output is None:
+        print("Training did not produce a checkpoint, skipping export.")
+        return
     if do_export:
-        merged = export_model.remote()
+        merged = export_model.remote(
+            checkpoint_path=output_dir,
+            output_dir=merged_output_dir,
+        )
         print(f"\nMerged model: {merged}\n")
+
+
+@app.local_entrypoint()
+def export_only(
+    checkpoint_path: str = "/checkpoints/minicpm-v-4.6-lora-v3",
+    output_dir: str = "/checkpoints/minicpm-v-4.6-merged-v3",
+):
+    """Export an already-trained LoRA checkpoint without retraining."""
+    merged = export_model.remote(
+        checkpoint_path=checkpoint_path,
+        output_dir=output_dir,
+    )
+    print(f"\nMerged model: {merged}\n")
