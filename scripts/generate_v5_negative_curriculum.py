@@ -20,6 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from data.schemas import normalize_bbox
 from scripts.convert_to_sharegpt import SYSTEM_PROMPT_INT
 
 Point = tuple[float, float]
@@ -319,7 +320,7 @@ def add_crack_network(img: Image.Image, rng: random.Random) -> tuple[Image.Image
     bright = rng.random() < 0.82
     core = rng.randint(226, 255) if bright else rng.randint(0, 36)
     halo = rng.randint(175, 235) if bright else rng.randint(28, 86)
-    for path in paths:
+    for path_index, path in enumerate(paths):
         all_points.extend(path)
         halo_width = rng.randint(10, 28)
         core_width = max(3, halo_width // rng.randint(3, 5))
@@ -335,6 +336,10 @@ def add_crack_network(img: Image.Image, rng: random.Random) -> tuple[Image.Image
             width=core_width,
             joint="curve",
         )
+        path_label = "emulsion_damage" if path_index == 0 or halo_width >= 18 else "scratch"
+        annotations.append(
+            {"label": path_label, "bbox": bbox(path, width, height, pad=24)}
+        )
         if rng.random() < 0.75:
             offset = rng.uniform(3, 12)
             fine = [(x + offset, y + rng.uniform(-6, 6)) for x, y in path]
@@ -344,9 +349,9 @@ def add_crack_network(img: Image.Image, rng: random.Random) -> tuple[Image.Image
                 width=max(1, core_width // 2),
                 joint="curve",
             )
-        annotations.append(
-            {"label": "scratch", "bbox": bbox(path, width, height, pad=24)}
-        )
+            annotations.append(
+                {"label": "scratch", "bbox": bbox(fine, width, height, pad=12)}
+            )
 
     shard_count = rng.randint(2, 5)
     for _ in range(shard_count):
@@ -524,7 +529,21 @@ def make_example(
 
 
 def annotations_image_pair(img: Image.Image, annotations: list[dict]) -> tuple[Image.Image, list[dict]]:
-    return img, annotations[:24]
+    return img, filter_training_annotations(annotations)[:24]
+
+
+def filter_training_annotations(annotations: list[dict]) -> list[dict]:
+    filtered: list[dict] = []
+    for annotation in annotations:
+        label = annotation.get("label")
+        normalized = normalize_bbox(annotation.get("bbox"))
+        if label is None or normalized is None:
+            continue
+        x_min, y_min, x_max, y_max = normalized
+        if (x_max - x_min) * (y_max - y_min) < 0.00002:
+            continue
+        filtered.append({"label": label, "bbox": list(normalized)})
+    return filtered
 
 
 def main() -> int:

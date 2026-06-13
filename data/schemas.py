@@ -113,6 +113,12 @@ def normalize_bbox(bbox: Any) -> BBox | None:
         y_min /= scale
         x_max /= scale
         y_max /= scale
+        if not all(-0.001 <= v <= 1.002 for v in (x_min, y_min, x_max, y_max)):
+            return None
+        x_min = max(0.0, min(1.0, x_min))
+        y_min = max(0.0, min(1.0, y_min))
+        x_max = max(0.0, min(1.0, x_max))
+        y_max = max(0.0, min(1.0, y_max))
 
     if not all(0.0 <= v <= 1.0 for v in (x_min, y_min, x_max, y_max)):
         return None

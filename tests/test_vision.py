@@ -21,6 +21,11 @@ def test_normalize_bbox_accepts_int_grid_and_nested_float_bbox() -> None:
     assert normalize_bbox([[0.1, 0.2, 0.3, 0.4]]) == (0.1, 0.2, 0.3, 0.4)
 
 
+def test_normalize_bbox_clamps_small_model_grid_overshoot() -> None:
+    assert normalize_bbox([0, 0, 1000, 1000]) == (0.0, 0.0, 1.0, 1.0)
+    assert normalize_bbox([0, 0, 2000, 2000]) is None
+
+
 def test_clean_defects_drops_unknown_labels_and_bad_boxes() -> None:
     cleaned, dropped = clean_defects(
         [

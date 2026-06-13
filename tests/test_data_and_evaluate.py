@@ -12,6 +12,7 @@ from scripts.evaluate import evaluate_predictions
 from scripts.generate_v5_negative_curriculum import (
     add_chemical_stain,
     add_crack_network,
+    filter_training_annotations,
     make_example,
     row,
 )
@@ -219,6 +220,18 @@ def test_v5_negative_curriculum_generates_crack_focus_examples() -> None:
         for annotation in crack_annotations
         for value in annotation["bbox"]
     )
+
+
+def test_v5_negative_curriculum_filters_invalid_training_annotations() -> None:
+    annotations = filter_training_annotations(
+        [
+            {"label": "scratch", "bbox": [0.1, 0.1, 0.4, 0.4]},
+            {"label": "scratch", "bbox": [1.2, 0.1, 1.4, 0.4]},
+            {"label": "emulsion_damage", "bbox": [0.5, 0.5, 0.50001, 0.50001]},
+        ]
+    )
+
+    assert annotations == [{"label": "scratch", "bbox": [0.1, 0.1, 0.4, 0.4]}]
 
 
 def test_training_log_summary() -> None:
