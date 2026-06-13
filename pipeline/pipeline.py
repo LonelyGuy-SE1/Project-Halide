@@ -18,6 +18,7 @@ def run_diagnosis(
     film_age_years: int = 1,
     storage: str = "unknown",
     scan_resolution_dpi: int = 4000,
+    metadata_confidence: str = "low",
 ) -> dict:
     """End-to-end: image -> defect JSON -> diagnosis + fixes.
 
@@ -42,6 +43,7 @@ def run_diagnosis(
         film_age_years=film_age_years,
         storage=storage,
         scan_resolution_dpi=scan_resolution_dpi,
+        metadata_confidence=metadata_confidence,
     )
 
     total_elapsed = time.perf_counter() - started
@@ -52,6 +54,7 @@ def run_diagnosis(
             "film_age_years": film_age_years,
             "storage": storage,
             "scan_resolution_dpi": scan_resolution_dpi,
+            "metadata_confidence": metadata_confidence,
         },
         "defects": defect_result,
         "diagnosis": diagnosis_result,

@@ -1,6 +1,7 @@
 # Project Halide Dependencies
 # Core runtime
-gradio>=5.0.0
+gradio>=6.10.0
+spaces>=0.40.0
 torch>=2.4.0
 torchvision>=0.19.0
 
@@ -20,6 +21,7 @@ opencv-python>=4.8.0
 pyyaml>=6.0
 tqdm>=4.65.0
 requests>=2.28.0
+pytest>=8.0.0
 
 # Storage
 # sqlite is part of the Python stdlib; no extra dep needed

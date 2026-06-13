@@ -1,8 +1,9 @@
-"""Caching. In-process LRU cache for diagnosis results keyed by image hash.
+"""Caching. In-process LRU cache for diagnosis results keyed by image and metadata.
 
 For privacy, we hash the image bytes; the image itself is never persisted
 in the cache. Identical scans produce identical hashes, giving us a simple
-content-addressed cache.
+content-addressed cache. Metadata is hashed into the key so the same scan can
+be diagnosed again when the user corrects film stock, storage, or confidence.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ import time
 from collections import OrderedDict
 from threading import Lock
 from typing import Any
+
+from config import get_app_config
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +36,17 @@ class DiagnosisCache:
     def hash_image(image_bytes: bytes) -> str:
         return hashlib.sha256(image_bytes).hexdigest()
 
-    def get(self, image_bytes: bytes) -> dict | None:
-        key = self.hash_image(image_bytes)
+    @classmethod
+    def hash_key(cls, image_bytes: bytes, metadata: dict | None = None) -> str:
+        image_hash = cls.hash_image(image_bytes)
+        if not metadata:
+            return image_hash
+        metadata_json = json.dumps(metadata, sort_keys=True, separators=(",", ":"))
+        metadata_hash = hashlib.sha256(metadata_json.encode("utf-8")).hexdigest()
+        return f"{image_hash}:{metadata_hash}"
+
+    def get(self, image_bytes: bytes, metadata: dict | None = None) -> dict | None:
+        key = self.hash_key(image_bytes, metadata)
         now = time.time()
         with self._lock:
             entry = self._store.get(key)
@@ -48,11 +60,11 @@ class DiagnosisCache:
                 return None
             self._store.move_to_end(key)
             self._hits += 1
-            logger.info("Cache hit for %s", key[:12])
+            logger.info("Cache hit for %s", key[:25])
             return value
 
-    def put(self, image_bytes: bytes, value: dict) -> None:
-        key = self.hash_image(image_bytes)
+    def put(self, image_bytes: bytes, value: dict, metadata: dict | None = None) -> None:
+        key = self.hash_key(image_bytes, metadata)
         now = time.time()
         with self._lock:
             self._store[key] = (now, value)
@@ -82,7 +94,11 @@ _default_cache: DiagnosisCache | None = None
 def get_cache() -> DiagnosisCache:
     global _default_cache
     if _default_cache is None:
-        _default_cache = DiagnosisCache()
+        cfg = get_app_config()
+        _default_cache = DiagnosisCache(
+            max_size=cfg.cache_size,
+            ttl_seconds=cfg.cache_ttl_seconds,
+        )
     return _default_cache
 
 

@@ -6,40 +6,65 @@ import json
 import logging
 import os
 import re
-from pathlib import Path
 from typing import Any
+
+from config import CHECKPOINT_DIR, get_vision_config, require_gpu_for_inference
 
 logger = logging.getLogger(__name__)
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-LOCAL_MODEL_PATH = REPO_ROOT / "checkpoints" / "minicpm-v-4.6-merged"
-HF_MODEL_ID = "Lonelyguyse1/halide-vision"
-BASE_MODEL_ID = "openbmb/MiniCPM-V-4_6"
-
-DOWNSAMPLE_MODE = os.getenv("HALIDE_DOWNSAMPLE_MODE", "4x")
-MAX_SLICE_NUMS = int(os.getenv("HALIDE_MAX_SLICE_NUMS", "36"))
-MAX_NEW_TOKENS = int(os.getenv("HALIDE_MAX_NEW_TOKENS", "3072"))
-
 DETECTION_PROMPT = (
     "You are a film defect detection engine. Analyze the film scan and detect "
-    "all visible defects. Output a JSON object with a 'defects' array. Each "
-    "defect has: 'label' (dust, dirt, scratch, long_hair, short_hair), "
+    "only physical defects that are on the film, scanner glass, holder, or "
+    "scan surface. The image may be a positive film scan of an ordinary scene, "
+    "a negative, a slide, a contact sheet, or a film scanner output. Detect "
+    "defects that appear as dust spots, dirt blobs, thin abrasion lines, "
+    "hair-like overlays, emulsion loss, chemical stains, or light leaks on "
+    "top of the photographed content. If no clear "
+    "surface artifact is visible, return {\"defects\": []}. Do not label "
+    "subject matter as defects. Do not label grass, tree branches, eyelashes, "
+    "fabric fibers, texture, grain, wires, shadows, printed text, or real hair "
+    "inside the photographed scene as long_hair or short_hair. Use scratch "
+    "only for thin physical abrasion or scan-surface lines, not object edges, "
+    "stems, typography, or composition lines. Output a JSON object with a "
+    "'defects' array. Each defect has: "
+    "'label' (dust, dirt, scratch, long_hair, short_hair, emulsion_damage, "
+    "chemical_stain, light_leak), "
+    "optional 'confidence' from 0.0 to 1.0, "
     "'bbox' as 4 integers in the [0, 999] grid "
     "[x_min, y_min, x_max, y_max] (multiply by image width/height to get pixels). "
+    "Return at most 150 defects. Prefer the clearest defects. Do not repeat "
+    "the same label and bbox. If uncertain, return an empty defects array. "
     "Output JSON only, no explanation."
 )
 
 
 def _resolve_model_path() -> str:
-    """Pick local merged model if present, else HF repo, else base model id."""
-    if LOCAL_MODEL_PATH.exists() and (LOCAL_MODEL_PATH / "config.json").exists():
-        logger.info("Using local merged model at %s", LOCAL_MODEL_PATH)
-        return str(LOCAL_MODEL_PATH)
-    if os.getenv("HF_TOKEN"):
-        logger.info("Using HF Hub repo %s", HF_MODEL_ID)
-        return HF_MODEL_ID
-    logger.info("Falling back to base model %s", BASE_MODEL_ID)
-    return BASE_MODEL_ID
+    """Pick configured fine-tuned model or public base model."""
+    cfg = get_vision_config()
+    explicit = os.getenv("HALIDE_VISION_MODEL_ID")
+    if explicit:
+        logger.info("Using explicit vision model %s", explicit)
+        return explicit
+
+    if cfg.use_finetuned:
+        local_candidates = [
+            cfg.local_model_path,
+            CHECKPOINT_DIR / "minicpm-v-4.6-merged",
+        ]
+        seen: set[str] = set()
+        for path in local_candidates:
+            key = str(path.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            if path.exists() and (path / "config.json").exists():
+                logger.info("Using local fine-tuned vision model at %s", path)
+                return str(path)
+        logger.info("Using fine-tuned vision model repo %s", cfg.finetuned_model_id)
+        return cfg.finetuned_model_id
+
+    logger.info("Using base vision model %s", cfg.base_model_id)
+    return cfg.base_model_id
 
 
 class MiniCPMVDetector:
@@ -59,6 +84,7 @@ class MiniCPMVDetector:
     def load(self) -> None:
         if self._model is not None:
             return
+        require_gpu_for_inference("vision")
         import torch
         from transformers import AutoModelForImageTextToText, AutoProcessor
 
@@ -66,7 +92,7 @@ class MiniCPMVDetector:
         self._processor = AutoProcessor.from_pretrained(
             self._model_path, trust_remote_code=True
         )
-        self._dtype = torch.bfloat16
+        self._dtype = _select_cuda_dtype(torch)
         self._model = AutoModelForImageTextToText.from_pretrained(
             self._model_path,
             torch_dtype=self._dtype,
@@ -74,7 +100,7 @@ class MiniCPMVDetector:
             trust_remote_code=True,
         )
         self._device = str(next(self._model.parameters()).device)
-        logger.info("Model loaded on %s", self._device)
+        logger.info("Model loaded on %s with dtype %s", self._device, self._dtype)
 
     def detect(self, image: Any) -> dict:
         """Run defect detection on a PIL image. Returns parsed JSON dict."""
@@ -83,6 +109,7 @@ class MiniCPMVDetector:
         if self._model is None:
             self.load()
 
+        cfg = get_vision_config()
         messages = [
             {
                 "role": "user",
@@ -93,21 +120,18 @@ class MiniCPMVDetector:
             }
         ]
 
-        inputs = self._processor.apply_chat_template(
+        inputs = _apply_chat_template(
+            self._processor,
             messages,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_dict=True,
-            return_tensors="pt",
-            downsample_mode=DOWNSAMPLE_MODE,
-            max_slice_nums=MAX_SLICE_NUMS,
+            downsample_mode=cfg.downsample_mode,
+            max_slice_nums=cfg.max_slice_nums,
         ).to(self._device)
 
         with torch.inference_mode():
             generated = self._model.generate(
                 **inputs,
-                downsample_mode=DOWNSAMPLE_MODE,
-                max_new_tokens=MAX_NEW_TOKENS,
+                downsample_mode=cfg.downsample_mode,
+                max_new_tokens=cfg.max_new_tokens,
                 do_sample=False,
             )
 
@@ -132,8 +156,16 @@ class MiniCPMVDetector:
 def _parse_defect_json(text: str) -> dict:
     """Extract and parse the first JSON object from model output."""
     text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
+        if isinstance(parsed, list):
+            return {"defects": parsed}
+        if isinstance(parsed, dict):
+            return parsed
+        return {"defects": [], "_raw": text, "_parse_error": "json_not_object"}
     except json.JSONDecodeError:
         pass
 
@@ -142,10 +174,77 @@ def _parse_defect_json(text: str) -> dict:
         logger.warning("No JSON found in model output: %r", text[:200])
         return {"defects": [], "_raw": text, "_parse_error": "no_json_object"}
     try:
-        return json.loads(match.group(0))
+        parsed = json.loads(match.group(0))
+        if isinstance(parsed, dict):
+            return parsed
+        return {"defects": [], "_raw": text, "_parse_error": "json_not_object"}
     except json.JSONDecodeError as exc:
+        fragments = _parse_defect_fragments(text)
+        if fragments:
+            logger.warning(
+                "Salvaged %s defect fragments from malformed JSON: %s",
+                len(fragments),
+                exc,
+            )
+            return {
+                "defects": fragments,
+                "_parse_error": str(exc),
+                "_parse_warning": "salvaged_defect_fragments",
+            }
         logger.warning("JSON parse error: %s; raw: %r", exc, text[:200])
         return {"defects": [], "_raw": text, "_parse_error": str(exc)}
+
+
+def _parse_defect_fragments(text: str) -> list[dict[str, Any]]:
+    """Recover complete defect objects from truncated JSON arrays."""
+    fragments: list[dict[str, Any]] = []
+    for match in re.finditer(r"\{[^{}]*\"label\"[^{}]*\"bbox\"\s*:\s*\[[^\]]+\][^{}]*\}", text):
+        try:
+            candidate = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict):
+            fragments.append(candidate)
+    return fragments
+
+
+def _apply_chat_template(
+    processor: Any,
+    messages: list[dict],
+    *,
+    downsample_mode: str,
+    max_slice_nums: int,
+) -> Any:
+    """Call MiniCPM chat template across Transformers API variants."""
+    kwargs = {
+        "tokenize": True,
+        "add_generation_prompt": True,
+        "return_dict": True,
+        "return_tensors": "pt",
+    }
+    try:
+        return processor.apply_chat_template(
+            messages,
+            **kwargs,
+            downsample_mode=downsample_mode,
+            max_slice_nums=max_slice_nums,
+        )
+    except TypeError:
+        return processor.apply_chat_template(
+            messages,
+            **kwargs,
+            processor_kwargs={
+                "downsample_mode": downsample_mode,
+                "max_slice_nums": max_slice_nums,
+            },
+        )
+
+
+def _select_cuda_dtype(torch_module: Any) -> Any:
+    major, _minor = torch_module.cuda.get_device_capability()
+    if major >= 8:
+        return torch_module.bfloat16
+    return torch_module.float16
 
 
 _default_detector: MiniCPMVDetector | None = None

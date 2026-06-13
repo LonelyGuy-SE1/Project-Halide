@@ -10,6 +10,7 @@ __pycache__/
 *.db
 storage/*.db
 data/raw/
+data/augmented/
 checkpoints/
 examples/annotated_*.png
 data/test_results/
