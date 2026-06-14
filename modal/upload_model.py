@@ -13,6 +13,67 @@ image = modal.Image.debian_slim(python_version="3.11").pip_install(
 checkpoint_volume = modal.Volume.from_name("halide-checkpoints", create_if_missing=True)
 
 
+MODEL_CARD = """---
+license: apache-2.0
+base_model: openbmb/MiniCPM-V-4.6
+library_name: transformers
+pipeline_tag: image-text-to-text
+tags:
+  - film
+  - computer-vision
+  - defect-detection
+  - minicpm-v
+---
+
+# Halide Vision
+
+Halide Vision is a MiniCPM-V 4.6 checkpoint fine-tuned for analog film-scan
+defect extraction. It is maintained by
+[Lonelyguyse1](https://huggingface.co/Lonelyguyse1) for
+[Project Halide](https://github.com/Lonelyguyse1/Project-Halide).
+
+The model emits JSON defect proposals for dust, dirt, scratches, hair-like
+surface contamination, emulsion damage, chemical stains, and light leaks. The
+Project Halide runtime validates the JSON schema, removes low-confidence or
+duplicate boxes, and uses tiled inspection when large scans hide thin crack
+networks at full-frame scale.
+
+## Training Summary
+
+- Base model: `openbmb/MiniCPM-V-4.6`
+- Training method: LoRA fine-tuning with LLaMA-Factory, merged for inference
+- Curriculum: FilmDamageSimulator annotations, procedural film-defect positives,
+  hard clean negatives, and a v7 crack curriculum
+- Held-out private negatives: used only for evaluation, not for training
+
+## Held-Out Smoke Result
+
+Final v7 checkpoint with 960 px tiled fallback:
+
+| Sample | Expected surface condition | Result |
+| --- | --- | --- |
+| negative1 | Long scratches across portrait | 8 defects |
+| negative2 | Abraded emulsion and dirt patches | 9 defects |
+| negative3 | Severe emulsion damage and debris | 6 defects |
+| negative4 | Near-clean hard negative | 0 defects |
+| negative5 | Broad lifted crack network | 45 defects |
+
+## Runtime Notes
+
+This model is intended to run inside Project Halide with GPU inference. The
+runtime refuses local CPU model inference and does not call cloud inference APIs.
+
+Use the model as an inspection aid. It can over-box broad damage regions, and
+film metadata should be treated as context unless verified by notes or edge
+marks.
+"""
+
+
+def _write_model_card(path, repo_id: str) -> None:
+    card = MODEL_CARD.replace("Lonelyguyse1/halide-vision", repo_id)
+    (path / "README.md").write_text(card, encoding="utf-8")
+
+
 @app.function(
     image=image,
     volumes={"/checkpoints": checkpoint_volume},
@@ -32,6 +93,7 @@ def upload_merged_model(
     if not path.exists():
         raise FileNotFoundError(f"model_dir does not exist: {model_dir}")
 
+    _write_model_card(path, repo_id)
     create_repo(repo_id=repo_id, repo_type="model", private=private, exist_ok=True)
     api = HfApi()
     api.upload_folder(

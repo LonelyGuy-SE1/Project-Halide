@@ -63,8 +63,10 @@ Project Halide is an edge-native diagnostic workbench for analog film scans by
 [Lonelyguyse1](https://huggingface.co/Lonelyguyse1).
 
 The runtime uses MiniCPM-V 4.6 for defect extraction and
-Nemotron-Mini-4B-Instruct for diagnostic reasoning. Model inference runs on the
-Space GPU runtime without cloud inference APIs.
+Nemotron-Mini-4B-Instruct for diagnostic reasoning. The vision pass combines
+full-frame inspection with a tiled fallback for large scans where crack
+networks are too small in the global image. Model inference runs on the Space
+GPU runtime without cloud inference APIs.
 
 Fine-tuned vision model:
 <https://huggingface.co/Lonelyguyse1/halide-vision>
@@ -72,9 +74,17 @@ Fine-tuned vision model:
 Source repository:
 <https://github.com/Lonelyguyse1/Project-Halide>
 
-Demo video: pending final evaluation run.
+Held-out validation summary:
 
-Social post: pending final evaluation run.
+- Four visibly damaged private negatives were detected with scratch and
+  emulsion-damage evidence.
+- One near-clean private negative returned zero defects.
+- A broad lifted crack network that failed full-frame inference was recovered by
+  the tiled fallback.
+
+Demo video: pending publication.
+
+Social post: pending publication.
 """
 
 SPACE_REQUIREMENTS = """gradio>=6.10.0,<7.0.0

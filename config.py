@@ -37,6 +37,13 @@ def env_int(name: str, default: int) -> int:
     return int(value)
 
 
+def env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    return float(value)
+
+
 def env_path(name: str, default: Path) -> Path:
     value = os.getenv(name)
     return Path(value) if value else default
@@ -56,6 +63,12 @@ class VisionConfig:
     max_slice_nums: int
     max_new_tokens: int
     max_input_pixels: int
+    tile_fallback_enabled: bool
+    tile_fallback_min_defects: int
+    tile_min_side: int
+    tile_max_side: int
+    tile_overlap: float
+    tile_max_tiles: int
 
 
 @dataclass(frozen=True)
@@ -90,6 +103,12 @@ def get_vision_config() -> VisionConfig:
         max_slice_nums=env_int("HALIDE_MAX_SLICE_NUMS", 36),
         max_new_tokens=env_int("HALIDE_MAX_NEW_TOKENS", 2048),
         max_input_pixels=env_int("HALIDE_MAX_INPUT_PIXELS", 4_000_000),
+        tile_fallback_enabled=env_bool("HALIDE_ENABLE_TILE_FALLBACK", True),
+        tile_fallback_min_defects=env_int("HALIDE_TILE_FALLBACK_MIN_DEFECTS", 1),
+        tile_min_side=env_int("HALIDE_TILE_MIN_SIDE", 900),
+        tile_max_side=env_int("HALIDE_TILE_MAX_SIDE", 960),
+        tile_overlap=env_float("HALIDE_TILE_OVERLAP", 0.35),
+        tile_max_tiles=env_int("HALIDE_TILE_MAX_TILES", 9),
     )
 
 
@@ -145,6 +164,7 @@ __all__ = [
     "STORAGE_DIR",
     "VisionConfig",
     "env_bool",
+    "env_float",
     "env_int",
     "env_path",
     "get_app_config",

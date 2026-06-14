@@ -9,7 +9,12 @@ from typing import Any
 import gradio as gr
 
 from config import get_app_config
-from data.preprocessing import draw_defects, image_to_png_bytes, load_image
+from data.preprocessing import (
+    draw_defects,
+    image_to_data_uri,
+    image_to_png_bytes,
+    load_image,
+)
 from pipeline.pipeline import run_diagnosis
 from storage.cache import get_cache
 from storage.database import get_diagnosis, init_db, list_recent, record_diagnosis
@@ -28,6 +33,7 @@ from ui.components import (
     history_table_rows,
     metadata_html,
     raw_json_text,
+    review_frame_html,
     run_state_html,
     stats_html,
 )
@@ -77,6 +83,24 @@ METADATA_CONFIDENCE_OPTIONS = [
     "High, verified from notes or edge marks",
 ]
 
+PipelineOutputs = tuple[
+    Any,
+    Any,
+    Any,
+    Any,
+    str,
+    str,
+    str,
+    str,
+    str,
+    str,
+    str,
+    list[list[str]],
+    str,
+    Any,
+    list[list[str]],
+]
+
 
 def normalize_metadata_confidence(value: str | None) -> str:
     text = (value or "low").strip().lower()
@@ -100,7 +124,7 @@ def _history_state(
 
 def _empty_outputs(
     message: str = "Awaiting scan.",
-) -> tuple[Any, Any, Any, str, str, str, str, str, str, str, list[list[str]], str, Any, list[list[str]]]:
+) -> PipelineOutputs:
     selected_entry, selector_update, history_rows = _history_state()
     empty = f'<p class="halide-muted">{html.escape(message)}</p>'
     hidden_html = gr.update(value="", visible=False)
@@ -108,6 +132,7 @@ def _empty_outputs(
         gr.update(value=LIGHTTABLE_EMPTY_STATE, visible=True),
         gr.update(value=None, visible=False),
         gr.update(value=[], visible=False),
+        hidden_html,
         run_state_html(None),
         empty,
         empty,
@@ -143,6 +168,16 @@ def _running_button_state() -> tuple[Any, str, Any]:
     )
 
 
+def _attach_preview(result: dict, pil_image: Any, annotated: Any) -> dict:
+    result = dict(result)
+    if not isinstance(result.get("preview"), dict):
+        result["preview"] = {
+            "original": image_to_data_uri(pil_image, max_side=720, quality=86),
+            "overlay": image_to_data_uri(annotated, max_side=720, quality=86),
+        }
+    return result
+
+
 def pipeline_error_html(exc: Exception) -> str:
     text = str(exc)
     lower = text.lower()
@@ -172,7 +207,7 @@ def run_pipeline(
     scan_dpi: int,
     metadata_confidence: str = "low",
     progress: gr.Progress = gr.Progress(),
-) -> tuple[Any, Any, Any, str, str, str, str, str, str, str, list[list[str]], str, Any, list[list[str]]]:
+) -> PipelineOutputs:
     """Gradio handler for the diagnose button."""
     if image is None:
         return _empty_outputs("No image provided.")
@@ -190,6 +225,7 @@ def run_pipeline(
             "metadata_confidence": normalize_metadata_confidence(metadata_confidence),
         }
         cached = cache.get(image_bytes, metadata=metadata)
+        was_cached = cached is not None
         if cached is not None:
             logger.info("Returning cached diagnosis")
             result = cached
@@ -205,12 +241,6 @@ def run_pipeline(
                 metadata_confidence=metadata["metadata_confidence"],
             )
             progress(0.85, "Stage 2/2: persisting diagnosis...")
-            try:
-                diagnosis_id = record_diagnosis(result)
-                result["diagnosis_id"] = diagnosis_id
-            except Exception as exc:  # pragma: no cover
-                logger.warning("Failed to record diagnosis: %s", exc)
-            cache.put(image_bytes, result, metadata=metadata)
 
         progress(1.0, "Done.")
 
@@ -221,9 +251,24 @@ def run_pipeline(
             defects,
             title=f"Halide: {len(defects)} validated defects",
         )
+        result = _attach_preview(result, pil_image, annotated)
+        if not was_cached:
+            try:
+                diagnosis_id = record_diagnosis(result)
+                result["diagnosis_id"] = diagnosis_id
+            except Exception as exc:  # pragma: no cover
+                logger.warning("Failed to record diagnosis: %s", exc)
+            cache.put(image_bytes, result, metadata=metadata)
+        elif not result.get("diagnosis_id"):
+            cache.put(image_bytes, result, metadata=metadata)
+
         image_pair = (pil_image, annotated)
         compare = gr.update(value=image_pair, visible=True)
         gallery = gr.update(value=_review_gallery(pil_image, annotated), visible=True)
+        review_links = gr.update(
+            value=review_frame_html(pil_image, annotated),
+            visible=True,
+        )
         run_state = run_state_html(result)
         stats = stats_html(result)
         notice = confidence_notice_html(result)
@@ -240,6 +285,7 @@ def run_pipeline(
             gr.update(value="", visible=False),
             compare,
             gallery,
+            review_links,
             run_state,
             stats,
             notice,
@@ -261,6 +307,7 @@ def run_pipeline(
             gr.update(value=LIGHTTABLE_EMPTY_STATE, visible=True),
             gr.update(value=None, visible=False),
             gr.update(value=[], visible=False),
+            hidden_html,
             err,
             err,
             "",
@@ -290,6 +337,32 @@ def open_history(diagnosis_id: str | None) -> tuple[str, str]:
     return history_detail_html(entry), raw_json_text(entry)
 
 
+def _history_id_from_selection(rows: list[list[str]] | None, index: Any) -> str | None:
+    if rows is None:
+        return None
+    row_index: int | None = None
+    if isinstance(index, (list, tuple)) and index:
+        try:
+            row_index = int(index[0])
+        except (TypeError, ValueError):
+            row_index = None
+    elif isinstance(index, int):
+        row_index = index
+    if row_index is None or row_index < 0 or row_index >= len(rows):
+        return None
+    row = rows[row_index]
+    if len(row) < 5:
+        return None
+    diagnosis_id = str(row[4] or "").strip()
+    return diagnosis_id or None
+
+
+def open_history_from_table(rows: list[list[str]] | None, evt: gr.SelectData) -> tuple[Any, str, str]:
+    diagnosis_id = _history_id_from_selection(rows, getattr(evt, "index", None))
+    entry = get_diagnosis(diagnosis_id or "") if diagnosis_id else None
+    return gr.update(value=diagnosis_id), history_detail_html(entry), raw_json_text(entry)
+
+
 def build_app() -> gr.Blocks:
     init_db()
     selected_entry, selector_update, initial_history_rows = _history_state()
@@ -313,7 +386,7 @@ def build_app() -> gr.Blocks:
                 image_input = gr.Image(
                     label="Film scan",
                     type="pil",
-                    height=300,
+                    height=330,
                     sources=["upload", "clipboard"],
                     buttons=["download", "fullscreen"],
                     elem_classes="halide-upload",
@@ -378,8 +451,8 @@ def build_app() -> gr.Blocks:
                         value=None,
                         label="Original / overlay",
                         type="pil",
-                        height="54vh",
-                        max_height=760,
+                        height=620,
+                        max_height=680,
                         slider_position=52,
                         interactive=False,
                         buttons=["download", "fullscreen"],
@@ -398,6 +471,7 @@ def build_app() -> gr.Blocks:
                         elem_classes="halide-review-gallery",
                         visible=False,
                     )
+                    review_links_output = gr.HTML(value="", visible=False)
 
             with gr.Column(scale=3, min_width=390, elem_classes="halide-inspector"):
                 with gr.Tabs(selected="report", elem_classes="halide-inspector-tabs"):
@@ -419,13 +493,18 @@ def build_app() -> gr.Blocks:
                             max_height=300,
                         )
                     with gr.Tab("History", id="history"):
+                        gr.HTML(
+                            '<div class="halide-tab-note">Select a row or choose a saved run.</div>'
+                        )
                         history_select = gr.Dropdown(
                             choices=initial_choices,
                             value=initial_value,
                             label="Saved diagnosis",
                             interactive=True,
                         )
-                        refresh_btn = gr.Button("Refresh", size="sm")
+                        with gr.Row(elem_classes="halide-history-actions"):
+                            open_history_btn = gr.Button("Open selected", size="sm")
+                            refresh_btn = gr.Button("Refresh", size="sm")
                         history_table = gr.Dataframe(
                             value=initial_history_rows,
                             headers=["Saved", "Film stock", "Defects", "Labels", "ID"],
@@ -435,6 +514,7 @@ def build_app() -> gr.Blocks:
                             interactive=False,
                             wrap=True,
                             max_height=260,
+                            elem_classes="halide-history-table",
                         )
                         history_detail = gr.HTML(
                             value=history_detail_html(selected_entry)
@@ -474,6 +554,7 @@ def build_app() -> gr.Blocks:
                 lighttable_empty,
                 compare_output,
                 review_gallery,
+                review_links_output,
                 run_state_output,
                 stats_output,
                 notice_output,
@@ -496,10 +577,20 @@ def build_app() -> gr.Blocks:
             inputs=[history_select],
             outputs=[history_select, history_detail, raw_output, history_table],
         )
+        open_history_btn.click(
+            fn=open_history,
+            inputs=[history_select],
+            outputs=[history_detail, raw_output],
+        )
         history_select.change(
             fn=open_history,
             inputs=[history_select],
             outputs=[history_detail, raw_output],
+        )
+        history_table.select(
+            fn=open_history_from_table,
+            inputs=[history_table],
+            outputs=[history_select, history_detail, raw_output],
         )
 
     return app

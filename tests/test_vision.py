@@ -170,3 +170,44 @@ def test_extract_defects_resizes_large_images_for_model(monkeypatch) -> None:
     result = inference.extract_defects(img)
     assert result["resized_for_model"] is True
     assert result["defect_count"] == 0
+
+
+def test_extract_defects_runs_tile_fallback_when_full_frame_is_clean(monkeypatch) -> None:
+    monkeypatch.setenv("HALIDE_TILE_MIN_SIDE", "1")
+    monkeypatch.setenv("HALIDE_TILE_MAX_SIDE", "64")
+    monkeypatch.setenv("HALIDE_TILE_MAX_TILES", "1")
+    monkeypatch.setenv("HALIDE_MAX_INPUT_PIXELS", "1000000")
+
+    class StubDetector:
+        model_path = "stub"
+
+        def __init__(self):
+            self.calls = 0
+
+        def detect(self, image):
+            self.calls += 1
+            if self.calls == 1:
+                assert image.size == (128, 128)
+                return {"defects": []}
+            assert image.size == (64, 64)
+            return {
+                "defects": [
+                    {
+                        "label": "emulsion_damage",
+                        "bbox": [0, 0, 999, 999],
+                        "confidence": 0.9,
+                    }
+                ]
+            }
+
+    stub = StubDetector()
+    monkeypatch.setattr(inference, "get_detector", lambda: stub)
+    img = Image.new("RGB", (128, 128), "black")
+    result = inference.extract_defects(img)
+
+    assert stub.calls == 2
+    assert result["tile_fallback_used"] is True
+    assert result["tile_count"] == 1
+    assert result["full_frame_defect_count"] == 0
+    assert result["defect_count"] == 1
+    assert result["defects"][0]["bbox"] == [0.25, 0.25, 0.75, 0.75]

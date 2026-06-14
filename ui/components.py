@@ -11,6 +11,7 @@ import re
 from typing import Iterable
 
 from data.schemas import LABEL_DISPLAY_NAMES
+from data.preprocessing import image_to_data_uri
 
 
 def _logo_html() -> str:
@@ -113,6 +114,8 @@ def defect_table_rows(result: dict | None) -> list[list[str]]:
     if not result:
         return []
     defects = (result.get("defects", {}) or {}).get("defects", []) or []
+    if not defects:
+        return [["", "No validated defects", "", ""]]
     rows: list[list[str]] = []
     for index, defect in enumerate(defects, start=1):
         label = str(defect.get("label", ""))
@@ -172,6 +175,22 @@ def diagnosis_html(text: str) -> str:
     return render_markdown_report(text or "(no diagnosis produced)")
 
 
+def review_frame_html(original, annotated) -> str:
+    """Render reliable full-size image links independent of Gradio fullscreen."""
+    original_uri = image_to_data_uri(original, max_side=1800, quality=92)
+    overlay_uri = image_to_data_uri(annotated, max_side=1800, quality=92)
+    return (
+        '<div class="halide-review-actions">'
+        '<a href="'
+        + original_uri
+        + '" target="_blank" rel="noreferrer">Open original</a>'
+        '<a href="'
+        + overlay_uri
+        + '" target="_blank" rel="noreferrer">Open overlay</a>'
+        "</div>"
+    )
+
+
 def render_markdown_report(text: str) -> str:
     """Render the constrained diagnosis Markdown used by Nemotron.
 
@@ -222,7 +241,7 @@ def _render_report_lines(lines: list[str]) -> str:
         if paragraph:
             blocks.append(
                 "<p>"
-                + " ".join(html.escape(part) for part in paragraph if part)
+                + " ".join(_render_inline(part) for part in paragraph if part)
                 + "</p>"
             )
             paragraph.clear()
@@ -245,15 +264,23 @@ def _render_report_lines(lines: list[str]) -> str:
             flush_bullets()
             flush_ordered()
             continue
+        if line.startswith("### "):
+            flush_paragraph()
+            flush_bullets()
+            flush_ordered()
+            blocks.append(
+                f'<h4 class="halide-report-subheading">{_render_inline(line[4:].strip())}</h4>'
+            )
+            continue
         numbered = re.match(r"^\d+\.\s+(.*)$", line)
         if line.startswith("- "):
             flush_paragraph()
             flush_ordered()
-            bullet_items.append(html.escape(line[2:].strip()))
+            bullet_items.append(_render_inline(line[2:].strip()))
         elif numbered:
             flush_paragraph()
             flush_bullets()
-            ordered_items.append(html.escape(numbered.group(1).strip()))
+            ordered_items.append(_render_inline(numbered.group(1).strip()))
         else:
             flush_bullets()
             flush_ordered()
@@ -263,6 +290,16 @@ def _render_report_lines(lines: list[str]) -> str:
     flush_bullets()
     flush_ordered()
     return "".join(blocks) or '<p class="halide-muted">No report text.</p>'
+
+
+def _render_inline(text: str) -> str:
+    escaped = html.escape(text)
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"__([^_]+)__", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<em>\1</em>", escaped)
+    escaped = re.sub(r"(?<!_)_([^_]+)_(?!_)", r"<em>\1</em>", escaped)
+    return escaped
 
 
 def metadata_html(result: dict) -> str:
@@ -379,8 +416,31 @@ def history_detail_html(entry: dict | None) -> str:
         return '<p class="halide-muted">Select a diagnosis to review details.</p>'
 
     counts = entry.get("label_counts", {}) or {}
-    meta = entry.get("raw_json", {}).get("film_metadata", {}) if entry.get("raw_json") else {}
+    raw = entry.get("raw_json", {}) or {}
+    meta = raw.get("film_metadata", {}) if raw else {}
     confidence = meta.get("metadata_confidence", entry.get("metadata_confidence", "low"))
+    preview = raw.get("preview", {}) if raw else {}
+    preview_html = ""
+    overlay_uri = str(preview.get("overlay", "") or "")
+    original_uri = str(preview.get("original", "") or "")
+    if overlay_uri.startswith("data:image/") or original_uri.startswith("data:image/"):
+        hero_uri = overlay_uri if overlay_uri.startswith("data:image/") else original_uri
+        preview_html = (
+            '<div class="halide-history-preview">'
+            f'<img src="{html.escape(hero_uri, quote=True)}" alt="" />'
+            '<div class="halide-history-preview-actions">'
+        )
+        if original_uri.startswith("data:image/"):
+            preview_html += (
+                f'<a href="{html.escape(original_uri, quote=True)}" '
+                'target="_blank" rel="noreferrer">Original</a>'
+            )
+        if overlay_uri.startswith("data:image/"):
+            preview_html += (
+                f'<a href="{html.escape(overlay_uri, quote=True)}" '
+                'target="_blank" rel="noreferrer">Overlay</a>'
+            )
+        preview_html += "</div></div>"
     stamp = time.strftime(
         "%Y-%m-%d %H:%M",
         time.localtime(float(entry.get("created_at", 0) or 0)),
@@ -397,6 +457,7 @@ def history_detail_html(entry: dict | None) -> str:
     ]
     return (
         '<div class="halide-history-detail">'
+        f"{preview_html}"
         f'<div class="halide-stats compact">{"".join(header_rows)}</div>'
         '<div class="halide-subsection">Defects</div>'
         f"{defect_pills_html(counts)}"
@@ -413,7 +474,24 @@ def raw_json_text(result_or_entry: dict | None) -> str:
         payload = result_or_entry.get("raw_json") or {}
     else:
         payload = result_or_entry
+    payload = _strip_preview(payload)
     return json.dumps(payload, indent=2, sort_keys=True)
+
+
+def _strip_preview(payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        return {}
+    clean = dict(payload)
+    if "preview" in clean:
+        preview = clean.get("preview") or {}
+        if isinstance(preview, dict):
+            clean["preview"] = {
+                key: "[image data URI omitted from JSON view]"
+                for key in preview
+            }
+        else:
+            clean["preview"] = "[image data URI omitted from JSON view]"
+    return clean
 
 
 __all__ = [
@@ -435,5 +513,6 @@ __all__ = [
     "render_markdown_report",
     "run_state_html",
     "raw_json_text",
+    "review_frame_html",
     "stats_html",
 ]

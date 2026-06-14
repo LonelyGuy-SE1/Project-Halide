@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import base64
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -44,6 +45,30 @@ def image_to_png_bytes(image: Image.Image) -> bytes:
     buf = io.BytesIO()
     load_image(image).save(buf, format="PNG", optimize=True)
     return buf.getvalue()
+
+
+def image_to_data_uri(
+    image: Image.Image,
+    *,
+    max_side: int = 1800,
+    image_format: str = "JPEG",
+    quality: int = 92,
+) -> str:
+    """Return a browser-openable image data URI for review previews."""
+    pil = resize_for_preview(load_image(image), max_side=max_side)
+    fmt = image_format.upper()
+    buf = io.BytesIO()
+    if fmt in {"JPG", "JPEG"}:
+        pil = pil.convert("RGB")
+        pil.save(buf, format="JPEG", quality=quality, optimize=True)
+        mime = "image/jpeg"
+    elif fmt == "PNG":
+        pil.save(buf, format="PNG", optimize=True)
+        mime = "image/png"
+    else:
+        raise ValueError(f"unsupported image_format: {image_format}")
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
 
 
 def image_sha256(image: Image.Image | bytes) -> str:
@@ -106,6 +131,7 @@ __all__ = [
     "LABEL_STYLE",
     "draw_defects",
     "image_sha256",
+    "image_to_data_uri",
     "image_to_png_bytes",
     "load_image",
     "resize_for_preview",

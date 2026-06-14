@@ -17,7 +17,7 @@ Fine-tuned vision model: <https://huggingface.co/Lonelyguyse1/halide-vision>
 1. Upload a film scan in the Gradio interface.
 2. Add film metadata, or leave it unknown when it is only a guess.
 3. Run MiniCPM-V 4.6 on GPU to extract defect JSON.
-4. Validate boxes, drop invalid or low-confidence detections, and merge near duplicates.
+4. Validate boxes, drop invalid or low-confidence detections, merge near duplicates, and run tiled inspection when a large damaged scan is missed full-frame.
 5. Run Nemotron-Mini-4B-Instruct on GPU with lab-style few-shot prompts.
 6. Show an annotated scan, evidence quality, diagnosis, fixes, full JSON, and SQLite history.
 
@@ -54,6 +54,7 @@ guessed film stock or storage condition does not override visual evidence.
 | `app.py` | Gradio launch entrypoint |
 | `config.py` | Runtime config, model IDs, GPU guardrails |
 | `data/` | Schemas, preprocessing, dataset summaries, augmentation |
+| `docs/` | Field notes and evaluation reports |
 | `models/` | MiniCPM and Nemotron wrappers |
 | `pipeline/` | End-to-end orchestration |
 | `storage/` | SQLite history and in-memory cache |
@@ -98,6 +99,10 @@ HALIDE_DOWNSAMPLE_MODE=4x
 HALIDE_MAX_SLICE_NUMS=36
 HALIDE_MAX_NEW_TOKENS=2048
 HALIDE_NEMOTRON_MAX_TOKENS=768
+HALIDE_ENABLE_TILE_FALLBACK=1
+HALIDE_TILE_MAX_SIDE=960
+HALIDE_TILE_OVERLAP=0.35
+HALIDE_TILE_MAX_TILES=9
 ```
 
 The handler is decorated with `spaces.GPU` when the `spaces` package is
@@ -107,11 +112,13 @@ available. The app also exposes an optional `gr.Server` builder at
 ## Dataset And Training
 
 Current training data combines FilmDamageSimulator annotations with generated
-procedural film-defect positives and hard clean negatives. The v5 curriculum
-adds analog-negative scratch clusters, broad emulsion damage, chemical stains,
-dirt, dust, light leaks, and clean subject-hair or grass counterexamples. The
-user-supplied negative samples are held out for evaluation and are not used for
-training.
+procedural film-defect positives and hard clean negatives. The v7 crack
+curriculum adds analog-negative scratch clusters, broad lifted and cracked
+emulsion regions, chemical stains, dirt, dust, light leaks, and clean
+subject-hair or grass counterexamples. Broad crack trunks are labeled as
+`emulsion_damage`, while fine branches and abrasion lines are labeled as
+`scratch`. The user-supplied negative samples are held out for evaluation and
+are not used for training.
 
 ```bash
 python scripts/download_datasets.py
@@ -122,13 +129,13 @@ python scripts/convert_to_sharegpt.py --input data/augmented/augmented_training.
 python scripts/generate_v4_synthetic_dataset.py --count 720 --clean-count 160 --max-side 1200 --base-mode procedural
 python scripts/convert_to_sharegpt.py --input data/augmented/v4_synthetic/v4_synthetic_training.jsonl --output-train data/augmented/training_sharegpt_synthetic_v4.json --output-val data/augmented/training_sharegpt_synthetic_val_v4.json --image-prefix augmented --no-val --format int_0_999
 python scripts/combine_sharegpt.py --out data/augmented/training_sharegpt_combined_v4.json data/training_sharegpt_v4.json data/augmented/training_sharegpt_augmented_v4.json data/augmented/training_sharegpt_synthetic_v4.json
-python scripts/generate_v5_negative_curriculum.py --defect-count 768 --clean-count 192 --val-fraction 0.08 --max-side 1120 --seed 606
+python scripts/generate_v5_negative_curriculum.py --dataset-name v7_crack_curriculum --image-prefix v7 --output-stem training_sharegpt_v7 --defect-count 1024 --clean-count 256 --crack-focus-fraction 0.40 --val-fraction 0.08 --max-side 1120 --seed 707
 ```
 
 Fine-tune on Modal:
 
 ```bash
-modal run modal/train_vision.py::main --epochs 8 --do-export --learning-rate 0.0001 --train-json-path /data/augmented/v5_negative_curriculum/training_sharegpt_v5.json --val-json-path /data/augmented/v5_negative_curriculum/training_sharegpt_val_v5.json --output-dir /checkpoints/minicpm-v-4.6-lora-v5-negative-curriculum --merged-output-dir /checkpoints/minicpm-v-4.6-merged-v5-negative-curriculum
+modal run modal/train_vision.py::main --epochs 5 --do-export --learning-rate 0.0001 --train-json-path /data/augmented/v7_crack_curriculum/training_sharegpt_v7.json --val-json-path /data/augmented/v7_crack_curriculum/training_sharegpt_val_v7.json --output-dir /checkpoints/minicpm-v-4.6-lora-v7-crack-curriculum-r1 --merged-output-dir /checkpoints/minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625
 ```
 
 For long runs on an unreliable local connection, deploy the Modal app and
@@ -136,20 +143,20 @@ spawn the training function from the deployed app:
 
 ```bash
 modal deploy modal/train_vision.py --name halide-vision-training-v4
-python scripts/spawn_modal_training.py --epochs 8 --learning-rate 0.0001 --train-json-path /data/augmented/v5_negative_curriculum/training_sharegpt_v5.json --val-json-path /data/augmented/v5_negative_curriculum/training_sharegpt_val_v5.json --output-dir /checkpoints/minicpm-v-4.6-lora-v5-negative-curriculum
+python scripts/spawn_modal_training.py --epochs 5 --learning-rate 0.0001 --train-json-path /data/augmented/v7_crack_curriculum/training_sharegpt_v7.json --val-json-path /data/augmented/v7_crack_curriculum/training_sharegpt_val_v7.json --output-dir /checkpoints/minicpm-v-4.6-lora-v7-crack-curriculum-r1
 ```
 
 Publish the merged checkpoint:
 
 ```bash
-modal run modal/upload_model.py::main --model-dir /checkpoints/minicpm-v-4.6-merged-v5-negative-curriculum --repo-id Lonelyguyse1/halide-vision --no-private
+modal run modal/upload_model.py::main --model-dir /checkpoints/minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625 --repo-id Lonelyguyse1/halide-vision --no-private
 ```
 
 Convert and publish the llama.cpp GGUF artifact:
 
 ```bash
-modal run modal/convert_gguf.py::main --model-dir /checkpoints/minicpm-v-4.6-merged-v5-negative-curriculum --outfile /checkpoints/minicpm-v-4.6-merged-v5-negative-curriculum-f16.gguf --quantized-outfile /checkpoints/minicpm-v-4.6-merged-v5-negative-curriculum-q4_k_m.gguf
-modal run modal/upload_model.py::file --local-path /checkpoints/minicpm-v-4.6-merged-v5-negative-curriculum-q4_k_m.gguf --repo-id Lonelyguyse1/halide-vision --path-in-repo minicpm-v-4.6-merged-v5-negative-curriculum-q4_k_m.gguf
+modal run modal/convert_gguf.py::main --model-dir /checkpoints/minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625 --outfile /checkpoints/minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625-f16.gguf --quantized-outfile /checkpoints/minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625-q4_k_m.gguf
+modal run modal/upload_model.py::file --local-path /checkpoints/minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625-q4_k_m.gguf --repo-id Lonelyguyse1/halide-vision --path-in-repo minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625-q4_k_m.gguf
 ```
 
 ## Evaluation
@@ -173,11 +180,24 @@ Run private held-out negatives through Modal GPU inference after a merged
 checkpoint exists:
 
 ```bash
-python scripts/run_private_negative_eval.py --model /checkpoints/minicpm-v-4.6-merged-v5-negative-curriculum
+python scripts/run_private_negative_eval.py --image .nottracked/negative1.png --image .nottracked/negative2.png --image .nottracked/negative3.png --image .nottracked/negative4.png --image .nottracked/negative5.png --model /checkpoints/minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625 --out-dir .nottracked/v7_ckpt625_tiled960_private_eval_exact5
 ```
 
 The five private user negatives stay in `.nottracked` and are not used for
-training data.
+training data. The final v7 checkpoint with 960 px tiled fallback produced this
+held-out smoke result:
+
+| Image | Visual expectation | Result |
+| --- | --- | --- |
+| `negative1.png` | Long scratches across portrait | 8 defects: scratch, emulsion damage, dust, dirt, chemical stain |
+| `negative2.png` | Abraded emulsion and dirt patches | 9 defects: scratch, emulsion damage, dust, dirt, chemical stain |
+| `negative3.png` | Severe emulsion damage and debris | 6 defects: scratch, emulsion damage, dirt, chemical stain |
+| `negative4.png` | Near-clean hard negative | 0 defects |
+| `negative5.png` | Broad lifted crack network over portrait | 45 defects: 17 scratch, 14 emulsion damage, 6 chemical stain, 5 dust, 3 dirt |
+
+The fifth sample is the key scale case: the full-frame model returned zero
+defects, while tiled inspection recovered the visible crack and lifted-emulsion
+network.
 
 ## Space Bundle
 
@@ -190,6 +210,13 @@ python scripts/prepare_space_bundle.py
 The bundle contains only runtime code, selected `data/` helpers, assets, a slim
 requirements file, and the Space README metadata.
 
+## Field Notes
+
+The public build and evaluation report is in
+[`docs/field-notes.md`](docs/field-notes.md). It documents the final tiled
+vision fallback and the five-image held-out smoke test without publishing the
+private negatives.
+
 ## Current Status
 
 Implemented:
@@ -198,6 +225,7 @@ Implemented:
 - MiniCPM-V 4.6 wrapper with GPU guardrails.
 - Nemotron-Mini-4B wrapper with metadata-confidence-aware prompting.
 - Defect schema validation, low-confidence filtering, bbox normalization, spatial summary, and IoU deduplication.
+- Tiled vision fallback for large scans where full-frame inference misses obvious crack networks.
 - SQLite diagnosis history with detail recall and full JSON storage.
 - Metadata-aware image cache.
 - Dataset preparation, augmentation utilities, ShareGPT conversion, evaluation, and Modal training scripts.

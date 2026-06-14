@@ -800,7 +800,187 @@ footer {{
   font-size: 0.82rem;
 }}
 
-@media (max-width: 1180px) {{
+#halide-header {{
+  background: rgba(17, 17, 17, 0.86);
+  border: 1px solid rgba(197, 154, 82, 0.28);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  padding: 16px 18px 15px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+}}
+
+.halide-intake-panel,
+.halide-inspector {{
+  position: sticky;
+  top: 14px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  scrollbar-color: rgba(197, 154, 82, 0.48) rgba(17, 17, 17, 0.88);
+}}
+
+.halide-main-stage {{
+  align-self: stretch;
+}}
+
+.halide-lighttable {{
+  position: relative;
+  overflow: hidden;
+  padding: 16px 20px !important;
+  background:
+    linear-gradient(180deg, rgba(17, 17, 17, 0.98), rgba(5, 5, 5, 0.98)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(243, 234, 219, 0.026) 0,
+      rgba(243, 234, 219, 0.026) 1px,
+      transparent 1px,
+      transparent 28px
+    ) !important;
+}}
+
+.halide-lighttable::before {{
+  content: "";
+  position: absolute;
+  inset: 14px 8px;
+  pointer-events: none;
+  border-left: 1px solid rgba(197, 154, 82, 0.22);
+  border-right: 1px solid rgba(197, 154, 82, 0.22);
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(197, 154, 82, 0.24) 0,
+      rgba(197, 154, 82, 0.24) 7px,
+      transparent 7px,
+      transparent 22px
+    ) left center / 5px 100% no-repeat,
+    repeating-linear-gradient(
+      0deg,
+      rgba(197, 154, 82, 0.24) 0,
+      rgba(197, 154, 82, 0.24) 7px,
+      transparent 7px,
+      transparent 22px
+    ) right center / 5px 100% no-repeat;
+  opacity: 0.55;
+}}
+
+.halide-lighttable > * {{
+  position: relative;
+  z-index: 1;
+}}
+
+#halide-compare {{
+  min-height: 520px !important;
+  border: 1px solid rgba(243, 234, 219, 0.16) !important;
+}}
+
+.halide-review-actions {{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}}
+
+.halide-review-actions a,
+.halide-history-preview-actions a {{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(102, 212, 193, 0.34);
+  background: rgba(102, 212, 193, 0.08);
+  color: #dffcf6 !important;
+  text-decoration: none !important;
+  font-size: 0.78rem;
+  font-weight: 820;
+}}
+
+.halide-review-actions a:hover,
+.halide-history-preview-actions a:hover {{
+  border-color: rgba(102, 212, 193, 0.62);
+  background: rgba(102, 212, 193, 0.13);
+}}
+
+.halide-report-subheading {{
+  color: var(--halide-teal);
+  font-size: 0.82rem;
+  font-weight: 860;
+  margin: 10px 0 6px;
+}}
+
+.halide-report-body strong {{
+  color: var(--halide-paper);
+}}
+
+.halide-report-body em {{
+  color: var(--halide-paper-soft);
+}}
+
+.halide-report-body code {{
+  color: #dffcf6;
+  background: rgba(102, 212, 193, 0.10);
+  border: 1px solid rgba(102, 212, 193, 0.22);
+  border-radius: 5px;
+  padding: 1px 5px;
+}}
+
+.halide-tab-note {{
+  color: var(--halide-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  margin: 0 0 8px;
+}}
+
+.halide-history-actions {{
+  gap: 8px !important;
+  margin: 6px 0 8px !important;
+}}
+
+.halide-history-actions button {{
+  min-height: 36px !important;
+}}
+
+.halide-history-table tbody tr {{
+  cursor: pointer;
+}}
+
+.halide-history-table tbody tr:hover td {{
+  background: rgba(197, 154, 82, 0.10) !important;
+}}
+
+.halide-history-preview {{
+  border: 1px solid rgba(197, 154, 82, 0.26);
+  background: rgba(5, 5, 5, 0.74);
+  border-radius: 8px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}}
+
+.halide-history-preview img {{
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  background: var(--halide-black);
+  border-radius: 6px;
+}}
+
+.halide-history-preview-actions {{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}}
+
+.halide-inspector-tabs {{
+  min-width: 0;
+}}
+
+.halide-inspector-tabs .tab-nav,
+.halide-inspector-tabs [role="tablist"] {{
+  overflow-x: auto;
+}}
+
+@media (max-width: 1380px) {{
   .halide-workbench {{
     flex-direction: column !important;
     gap: 12px !important;
@@ -818,6 +998,12 @@ footer {{
 
   .halide-lighttable {{
     padding: 11px !important;
+  }}
+
+  .halide-intake-panel,
+  .halide-inspector {{
+    position: static;
+    max-height: none;
   }}
 }}
 
@@ -896,6 +1082,10 @@ footer {{
 
   .halide-review-gallery {{
     height: 190px !important;
+  }}
+
+  #halide-compare {{
+    min-height: 360px !important;
   }}
 
   #halide-run-button,

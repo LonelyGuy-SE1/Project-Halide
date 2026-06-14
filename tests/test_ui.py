@@ -1,21 +1,26 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from PIL import Image
 
 from storage.cache import get_cache
+from storage.database import get_diagnosis
 from ui import app as ui_app
-from ui.components import history_detail_html, diagnosis_html
+from ui.components import history_detail_html, diagnosis_html, raw_json_text
 
 
 def test_html_renderers_escape_model_and_user_text() -> None:
     assert "<script>" not in diagnosis_html("<script>alert(1)</script>")
     rendered = diagnosis_html(
         "## Root cause\nTransport scratch.\n\n"
-        "## Physical fixes\n1. Re-scan a crop.\n2. Inspect under a loupe."
+        "## Physical fixes\n### Lab bench\n1. **Re-scan** a crop.\n2. Inspect `under a loupe`."
     )
     assert "## Root cause" not in rendered
     assert "halide-report-section" in rendered
-    assert "<li>Re-scan a crop.</li>" in rendered
+    assert "halide-report-subheading" in rendered
+    assert "<li><strong>Re-scan</strong> a crop.</li>" in rendered
+    assert "<code>under a loupe</code>" in rendered
     detail = history_detail_html(
         {
             "film_type": "<b>bad</b>",
@@ -68,6 +73,7 @@ def test_run_pipeline_with_stubbed_diagnosis(monkeypatch, tmp_path) -> None:
         lighttable_empty,
         compare_update,
         review_gallery,
+        review_links,
         run_state,
         stats,
         notice,
@@ -89,6 +95,9 @@ def test_run_pipeline_with_stubbed_diagnosis(monkeypatch, tmp_path) -> None:
     )
     assert lighttable_empty["visible"] is False
     assert compare_update["visible"] is True
+    assert review_links["visible"] is True
+    assert "Open overlay" in review_links["value"]
+    assert "data:image/jpeg;base64" in review_links["value"]
     image_pair = compare_update["value"]
     original, annotated = image_pair
     assert original.size == (64, 64)
@@ -104,8 +113,10 @@ def test_run_pipeline_with_stubbed_diagnosis(monkeypatch, tmp_path) -> None:
     assert "Ilford HP5" in metadata
     assert '"model_path": "vision-stub"' in raw_json
     assert '"metadata_confidence": "low"' in raw_json
+    assert "image data URI omitted" in raw_json
     assert defect_rows == [["1", "Scratch", "", "0.100, 0.100, 0.700, 0.200"]]
     assert "Transport scratch" in history_detail
+    assert "halide-history-preview" in history_detail
     assert selector_update["value"]
     assert history_rows
     assert "Total defects" in stats
@@ -117,6 +128,7 @@ def test_empty_run_outputs_keep_lighttable_placeholder() -> None:
         lighttable_empty,
         compare_update,
         review_gallery,
+        review_links,
         run_state,
         stats,
         notice,
@@ -140,6 +152,7 @@ def test_empty_run_outputs_keep_lighttable_placeholder() -> None:
     assert lighttable_empty["visible"] is True
     assert compare_update["visible"] is False
     assert review_gallery["visible"] is False
+    assert review_links["visible"] is False
     assert "Load a scan" in run_state
     assert "No image provided" in stats
     assert "No image provided" in notice
@@ -164,3 +177,68 @@ def test_pipeline_error_html_uses_friendly_gpu_message() -> None:
     assert "GPU unavailable" in rendered
     assert "RuntimeError" not in rendered
     assert "no CUDA GPU" not in rendered
+
+
+def test_raw_json_text_omits_preview_data_uri() -> None:
+    rendered = raw_json_text(
+        {
+            "preview": {"original": "data:image/jpeg;base64,abc"},
+            "defects": {"defect_count": 0},
+        }
+    )
+
+    assert "data:image/jpeg" not in rendered
+    assert "image data URI omitted" in rendered
+
+
+def test_history_table_selection_opens_saved_diagnosis(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("HALIDE_DB_PATH", str(tmp_path / "halide.db"))
+    get_cache().clear()
+
+    def fake_run_diagnosis(**kwargs):
+        return {
+            "film_metadata": {
+                "film_type": kwargs["film_type"],
+                "film_age_years": kwargs["film_age_years"],
+                "storage": kwargs["storage"],
+                "scan_resolution_dpi": kwargs["scan_resolution_dpi"],
+                "metadata_confidence": kwargs["metadata_confidence"],
+            },
+            "defects": {
+                "defects": [],
+                "defect_count": 0,
+                "label_counts": {},
+                "dropped_count": 0,
+                "inference_seconds": 0.01,
+                "model_path": "vision-stub",
+            },
+            "diagnosis": {
+                "diagnosis_text": "## Root cause\nNo visible damage.",
+                "reasoning_seconds": 0.01,
+                "model_path": "reasoning-stub",
+            },
+            "total_seconds": 0.02,
+        }
+
+    monkeypatch.setattr(ui_app, "run_diagnosis", fake_run_diagnosis)
+    image = Image.new("RGB", (64, 64), "black")
+    outputs = ui_app.run_pipeline(
+        image,
+        "Unknown / Not specified",
+        0,
+        "unknown",
+        4000,
+        "Low, rough guess",
+    )
+    history_rows = outputs[-1]
+    diagnosis_id = history_rows[0][4]
+
+    selector_update, detail, raw = ui_app.open_history_from_table(
+        history_rows,
+        SimpleNamespace(index=(0, 0)),
+    )
+
+    assert selector_update["value"] == diagnosis_id
+    assert "No visible damage" in detail
+    assert get_diagnosis(diagnosis_id) is not None
+    assert '"defect_count": 0' in raw
