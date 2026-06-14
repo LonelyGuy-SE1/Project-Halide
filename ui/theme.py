@@ -798,6 +798,22 @@ footer {{
   text-align: center;
   padding: 14px 8px 4px;
   font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}}
+
+footer a {{
+  color: var(--halide-amber-light) !important;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(236, 177, 107, 0.35);
+}}
+
+footer a:hover {{
+  color: var(--halide-paper) !important;
+  border-bottom-color: rgba(236, 177, 107, 0.75);
 }}
 
 #halide-header {{

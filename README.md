@@ -8,11 +8,17 @@ Codename: Helius
 
 Author: [Lonelyguyse1](https://huggingface.co/Lonelyguyse1)
 
+Source: <https://github.com/LonelyGuy-SE1/Project-Halide>
+
 Live demo: <https://huggingface.co/spaces/build-small-hackathon/project-halide>
 
 Profile mirror: <https://huggingface.co/spaces/Lonelyguyse1/project-halide>
 
 Fine-tuned vision model: <https://huggingface.co/Lonelyguyse1/halide-vision>
+
+Demo video: <https://huggingface.co/spaces/build-small-hackathon/project-halide/blob/main/assets/demo_walkthrough.mp4>
+
+Public launch post: <https://huggingface.co/spaces/build-small-hackathon/project-halide/discussions/1>
 
 llama.cpp GGUF artifact:
 <https://huggingface.co/Lonelyguyse1/halide-vision/blob/main/minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625-q4_k_m.gguf>
@@ -84,7 +90,7 @@ model on CPU.
 ```bash
 python -m venv venv
 venv\Scripts\activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 python -m pytest
 python app.py
 ```
@@ -113,6 +119,10 @@ HALIDE_TILE_MAX_TILES=9
 The handler is decorated with `spaces.GPU` when the `spaces` package is
 available. The app also exposes an optional `gr.Server` builder at
 `ui.server:build_server` with `/healthz`.
+
+Modal was used for offline training, held-out GPU evaluation, checkpoint
+upload, GGUF conversion, and Space deployment. The runtime app itself does not
+call Modal or any hosted inference API.
 
 ## Dataset And Training
 
@@ -242,6 +252,7 @@ Verification highlights:
 - Local unit tests cover UI handlers, storage, schema validation, pipeline orchestration, prompt construction, and evaluation utilities.
 - Python compile checks cover all repository Python files.
 - Live Space tests are run from a GPU-backed runtime, not local CPU.
+- Public launch materials include a short MP4 demo, live Space screenshots, a public synthetic before/after run, and a launch note on Hugging Face.
 
 ## License
 

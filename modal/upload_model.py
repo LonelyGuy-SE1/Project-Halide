@@ -30,7 +30,7 @@ tags:
 Halide Vision is a MiniCPM-V 4.6 checkpoint fine-tuned for analog film-scan
 defect extraction. It is maintained by
 [Lonelyguyse1](https://huggingface.co/Lonelyguyse1) for
-[Project Halide](https://github.com/Lonelyguyse1/Project-Halide).
+[Project Halide](https://github.com/LonelyGuy-SE1/Project-Halide).
 
 The model emits JSON defect proposals for dust, dirt, scratches, hair-like
 surface contamination, emulsion damage, chemical stains, and light leaks. The

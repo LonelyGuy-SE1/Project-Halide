@@ -1,0 +1,15 @@
+-r requirements.txt
+
+# Dataset preparation and evaluation
+datasets>=2.0.0
+numpy>=1.24.0
+opencv-python>=4.8.0
+pyyaml>=6.0
+tqdm>=4.65.0
+requests>=2.28.0
+
+# Tests
+pytest>=8.0.0
+
+# Offline Modal jobs, not used at runtime
+modal>=0.50.0

@@ -52,9 +52,14 @@ tags:
   - sponsor:nvidia
   - sponsor:modal
   - sponsor:openai
+  - badge:offbrand
+  - badge:tiny
+  - badge:demo
+  - badge:quest
   - achievement:offgrid
   - achievement:welltuned
   - achievement:offbrand
+  - achievement:fieldnotes
 ---
 
 # Project Halide
@@ -72,7 +77,17 @@ Fine-tuned vision model:
 <https://huggingface.co/Lonelyguyse1/halide-vision>
 
 Source repository:
-<https://github.com/Lonelyguyse1/Project-Halide>
+<https://github.com/LonelyGuy-SE1/Project-Halide>
+
+Demo video:
+<https://huggingface.co/spaces/build-small-hackathon/project-halide/blob/main/assets/demo_walkthrough.mp4>
+
+Public launch post:
+<https://huggingface.co/spaces/build-small-hackathon/project-halide/discussions/1>
+
+Modal was used for offline training, held-out GPU evaluation, checkpoint upload,
+GGUF conversion, and Space deployment. The runtime app itself does not call
+Modal or any hosted inference API.
 
 Held-out validation summary:
 
@@ -81,10 +96,6 @@ Held-out validation summary:
 - One near-clean private negative returned zero defects.
 - A broad lifted crack network that failed full-frame inference was recovered by
   the tiled fallback.
-
-Demo video: pending publication.
-
-Social post: pending publication.
 """
 
 SPACE_REQUIREMENTS = """gradio>=6.10.0,<7.0.0

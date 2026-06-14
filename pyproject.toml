@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "project-halide"
+version = "0.1.0"
+description = "Edge-native diagnostic engine for analog film scans."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [
+  { name = "Lonelyguyse1" },
+]
+dependencies = [
+  "gradio>=6.10.0,<7.0.0",
+  "spaces>=0.40.0",
+  "torch>=2.4.0",
+  "torchvision>=0.19.0",
+  "transformers>=5.7.0,<6.0.0",
+  "accelerate>=1.0.0",
+  "huggingface_hub>=0.20.0",
+  "pillow>=10.0.0",
+  "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "datasets>=2.0.0",
+  "opencv-python>=4.8.0",
+  "pyyaml>=6.0",
+  "tqdm>=4.65.0",
+  "requests>=2.28.0",
+  "pytest>=8.0.0",
+  "modal>=0.50.0",
+]
+
+[tool.setuptools.packages.find]
+include = [
+  "data",
+  "data.*",
+  "models",
+  "models.*",
+  "pipeline",
+  "pipeline.*",
+  "storage",
+  "storage.*",
+  "ui",
+  "ui.*",
+  "scripts",
+  "scripts.*",
+]

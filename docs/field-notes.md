@@ -50,6 +50,14 @@ the following result:
 The key regression test is `negative5.png`: full-frame inference produced zero
 validated defects, while tiled inference recovered the visible crack network.
 
+## Public Demo Run
+
+A public synthetic negative was also run through the live Space after the final
+UI and tiled fallback changes. The Space returned 7 validated defects on that
+sample: 4 emulsion-damage regions, 2 scratches, and 1 chemical stain. The demo
+asset in `assets/demo_walkthrough.mp4` uses only that public synthetic sample
+and live UI screenshots, not the private held-out negatives.
+
 ## Current Limits
 
 Halide is an inspection aid, not an archival authority. It can over-box broad

@@ -8,6 +8,7 @@ venv/
 __pycache__/
 .pytest_cache/
 *.pyc
+*.egg-info/
 *.db
 storage/*.db
 data/raw/

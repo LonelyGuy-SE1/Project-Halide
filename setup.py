@@ -1,28 +1,7 @@
-"""Package setup for Project Halide."""
+"""Compatibility shim for editable installs."""
 
 from __future__ import annotations
 
-from setuptools import find_packages, setup
+from setuptools import setup
 
-setup(
-    name="project-halide",
-    version="0.1.0",
-    description="Edge-native diagnostic engine for analog film scans.",
-    packages=find_packages(
-        include=[
-            "data",
-            "data.*",
-            "models",
-            "models.*",
-            "pipeline",
-            "pipeline.*",
-            "storage",
-            "storage.*",
-            "ui",
-            "ui.*",
-            "scripts",
-            "scripts.*",
-        ]
-    ),
-    python_requires=">=3.11",
-)
+setup()

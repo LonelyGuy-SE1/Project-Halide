@@ -37,7 +37,6 @@ from ui.components import (
     run_state_html,
     stats_html,
 )
-from ui.theme import THEME_CSS, build_theme
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -531,8 +530,13 @@ def build_app() -> gr.Blocks:
                         )
 
         gr.HTML(
-            "<footer>Project Halide, open-weight film diagnostics. "
-            "Vision: MiniCPM-V 4.6. Reasoning: Nemotron-Mini-4B-Instruct.</footer>"
+            '<footer><span>Project Halide, open-weight film diagnostics.</span>'
+            '<a href="https://huggingface.co/Lonelyguyse1/halide-vision" '
+            'target="_blank" rel="noreferrer">Vision model</a>'
+            '<a href="https://huggingface.co/spaces/build-small-hackathon/project-halide" '
+            'target="_blank" rel="noreferrer">Live Space</a>'
+            '<a href="https://github.com/LonelyGuy-SE1/Project-Halide" '
+            'target="_blank" rel="noreferrer">Source</a></footer>'
         )
 
         run_event = run_btn.click(
@@ -594,21 +598,3 @@ def build_app() -> gr.Blocks:
         )
 
     return app
-
-
-def main() -> None:
-    app = build_app()
-    app.queue(max_size=8).launch(
-        server_name="0.0.0.0",
-        server_port=7860,
-        show_error=True,
-        theme=build_theme(),
-        css=THEME_CSS,
-        allowed_paths=["assets"],
-        favicon_path="assets/logo.jpg",
-        max_file_size="60mb",
-    )
-
-
-if __name__ == "__main__":
-    main()
