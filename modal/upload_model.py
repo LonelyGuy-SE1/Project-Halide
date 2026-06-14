@@ -63,6 +63,9 @@ Final v7 checkpoint with 960 px tiled fallback:
 This model is intended to run inside Project Halide with GPU inference. The
 runtime refuses local CPU model inference and does not call cloud inference APIs.
 
+The repo also includes a llama.cpp Q4_K_M GGUF artifact:
+`minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625-q4_k_m.gguf`.
+
 Use the model as an inspection aid. It can over-box broad damage regions, and
 film metadata should be treated as context unless verified by notes or edge
 marks.
@@ -135,6 +138,27 @@ def upload_checkpoint_file(
     return f"{repo_id}/{path_in_repo}"
 
 
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("huggingface-secret")],
+    timeout=600,
+)
+def upload_model_card(
+    repo_id: str = "Lonelyguyse1/halide-vision",
+) -> str:
+    from huggingface_hub import HfApi
+
+    card = MODEL_CARD.replace("Lonelyguyse1/halide-vision", repo_id)
+    HfApi().upload_file(
+        path_or_fileobj=card.encode("utf-8"),
+        path_in_repo="README.md",
+        repo_id=repo_id,
+        repo_type="model",
+        commit_message="Update Halide Vision model card",
+    )
+    return repo_id
+
+
 @app.local_entrypoint()
 def main(
     model_dir: str = "/checkpoints/minicpm-v-4.6-merged-v4-stage1",
@@ -147,6 +171,12 @@ def main(
         private=private,
     )
     print(f"Uploaded {model_dir} to {uploaded}")
+
+
+@app.local_entrypoint()
+def card(repo_id: str = "Lonelyguyse1/halide-vision"):
+    uploaded = upload_model_card.remote(repo_id=repo_id)
+    print(f"Updated model card for {uploaded}")
 
 
 @app.local_entrypoint()

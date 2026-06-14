@@ -67,3 +67,10 @@ python scripts/run_private_negative_eval.py --image .nottracked/negative1.png --
 ```
 
 The output directory contains raw JSON and overlay images for local inspection.
+
+The merged checkpoint was also converted on Modal to a llama.cpp Q4_K_M GGUF
+artifact and uploaded to the model repository:
+
+```text
+minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625-q4_k_m.gguf
+```

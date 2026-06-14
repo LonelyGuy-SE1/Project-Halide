@@ -14,6 +14,9 @@ Profile mirror: <https://huggingface.co/spaces/Lonelyguyse1/project-halide>
 
 Fine-tuned vision model: <https://huggingface.co/Lonelyguyse1/halide-vision>
 
+llama.cpp GGUF artifact:
+<https://huggingface.co/Lonelyguyse1/halide-vision/blob/main/minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625-q4_k_m.gguf>
+
 ## What It Does
 
 1. Upload a film scan in the Gradio interface.
