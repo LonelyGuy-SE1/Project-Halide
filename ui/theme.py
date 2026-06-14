@@ -809,13 +809,18 @@ footer {{
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
 }}
 
-.halide-intake-panel,
 .halide-inspector {{
   position: sticky;
   top: 14px;
   max-height: calc(100vh - 32px);
   overflow-y: auto;
   scrollbar-color: rgba(197, 154, 82, 0.48) rgba(17, 17, 17, 0.88);
+}}
+
+.halide-intake-panel {{
+  align-self: flex-start;
+  height: auto !important;
+  overflow: visible !important;
 }}
 
 .halide-main-stage {{
@@ -1000,7 +1005,6 @@ footer {{
     padding: 11px !important;
   }}
 
-  .halide-intake-panel,
   .halide-inspector {{
     position: static;
     max-height: none;
