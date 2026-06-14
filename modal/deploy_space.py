@@ -52,7 +52,6 @@ def deploy_space(
         repo_id=repo_id,
         repo_type="space",
         space_sdk="gradio",
-        space_hardware=hardware,
         private=False,
         exist_ok=True,
         space_variables=variables,
@@ -67,7 +66,13 @@ def deploy_space(
         commit_message="Deploy Project Halide Gradio Space",
         ignore_patterns=["**/__pycache__/**", "*.pyc"],
     )
-    api.request_space_hardware(repo_id=repo_id, hardware=hardware)
+    try:
+        api.request_space_hardware(repo_id=repo_id, hardware=hardware)
+    except Exception as exc:
+        return (
+            f"https://huggingface.co/spaces/{repo_id} "
+            f"(uploaded, hardware request skipped: {exc})"
+        )
     return f"https://huggingface.co/spaces/{repo_id}"
 
 
