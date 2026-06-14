@@ -8,7 +8,9 @@ Codename: Helius
 
 Author: [Lonelyguyse1](https://huggingface.co/Lonelyguyse1)
 
-Live demo: <https://huggingface.co/spaces/Lonelyguyse1/project-halide>
+Live demo: <https://huggingface.co/spaces/build-small-hackathon/project-halide>
+
+Profile mirror: <https://huggingface.co/spaces/Lonelyguyse1/project-halide>
 
 Fine-tuned vision model: <https://huggingface.co/Lonelyguyse1/halide-vision>
 
