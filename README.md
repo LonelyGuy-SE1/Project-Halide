@@ -261,3 +261,32 @@ Verification highlights:
 ## License
 
 Apache 2.0.
+
+## Build Small Tags
+
+The official Hugging Face Space README carries these validator tags:
+
+```yaml
+tags:
+  - track:backyard
+  - sponsor:openbmb
+  - sponsor:openai
+  - sponsor:nvidia
+  - sponsor:modal
+  - achievement:offgrid
+  - achievement:welltuned
+  - achievement:offbrand
+  - achievement:fieldnotes
+```
+
+Prize and badge alignment:
+
+- Backyard AI: practical film-diagnostics workflow for real analog scan problems.
+- OpenBMB: MiniCPM-V 4.6 is the vision extraction model.
+- OpenAI: Codex-attributed commits are present in the connected GitHub history.
+- NVIDIA: Nemotron-Mini-4B-Instruct writes the diagnostic report.
+- Modal: used for offline training, evaluation, conversion, upload, and Space deployment.
+- Off the Grid: runtime uses open weights on the Space GPU with no hosted inference APIs.
+- Well-Tuned: the fine-tuned vision model is published on Hugging Face.
+- Off-Brand: the app uses a custom autumn Gradio frontend and compare viewer.
+- Field Notes: the build report is published in `docs/field-notes.md`.
