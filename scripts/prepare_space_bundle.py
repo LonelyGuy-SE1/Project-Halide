@@ -118,8 +118,8 @@ Modal or any hosted inference API.
   uncertain film metadata lower priority than visible evidence.
 - Modal: used offline for training, evaluation, checkpoint export, GGUF
   conversion, model upload, and Space deployment support.
-- OpenAI: source-control history includes the required attributed development
-  work in the linked GitHub repository.
+- OpenAI: assisted implementation, review, and source-control hygiene through
+  the linked repository workflow.
 
 ## Field Guide Alignment
 
