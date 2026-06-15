@@ -16,9 +16,9 @@ Profile mirror: <https://huggingface.co/spaces/Lonelyguyse1/project-halide>
 
 Fine-tuned vision model: <https://huggingface.co/Lonelyguyse1/halide-vision>
 
-Demo video: <https://huggingface.co/spaces/build-small-hackathon/project-halide/blob/main/assets/demo_walkthrough.mp4>
+Demo video: <https://youtube.com/watch?si=apzCiBZcIZWC1nFt&v=DGJ2M1aQCrE&feature=youtu.be>
 
-Public launch post: <https://huggingface.co/spaces/build-small-hackathon/project-halide/discussions/1>
+Public launch post: <https://x.com/lonelyguyse1/status/2066631507956105423?s=20>
 
 Technical blog:
 <https://lonelyguy.vercel.app/articles/2026-06-16-project-halide>
