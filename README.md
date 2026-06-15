@@ -4,8 +4,6 @@ Edge-native diagnostic engine for analog film scans. Halide analyzes a scan or
 contact-sheet crop, extracts visible film and scanner defects, then produces a
 lab-style diagnosis with physical fixes.
 
-Codename: Helius
-
 Author: [Lonelyguyse1](https://huggingface.co/Lonelyguyse1)
 
 Source: <https://github.com/LonelyGuy-SE1/Project-Halide>
