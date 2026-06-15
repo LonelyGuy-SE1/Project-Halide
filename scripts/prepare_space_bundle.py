@@ -87,10 +87,10 @@ Source repository:
 <https://github.com/LonelyGuy-SE1/Project-Halide>
 
 Demo video:
-<https://huggingface.co/spaces/build-small-hackathon/project-halide/blob/main/assets/demo_walkthrough.mp4>
+<https://youtube.com/watch?si=apzCiBZcIZWC1nFt&v=DGJ2M1aQCrE&feature=youtu.be>
 
 Public launch post:
-<https://huggingface.co/spaces/build-small-hackathon/project-halide/discussions/1>
+<https://x.com/lonelyguyse1/status/2066631507956105423?s=20>
 
 Technical blog:
 <https://lonelyguy.vercel.app/articles/2026-06-16-project-halide>
