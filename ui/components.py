@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import functools
 import html
 import json
 import time
@@ -14,6 +15,7 @@ from data.schemas import LABEL_DISPLAY_NAMES
 from data.preprocessing import image_to_data_uri
 
 
+@functools.lru_cache(maxsize=1)
 def _logo_html() -> str:
     path = Path(__file__).resolve().parents[1] / "assets" / "logo.jpg"
     if not path.exists():
@@ -23,6 +25,9 @@ def _logo_html() -> str:
         '<img class="halide-brand-mark" '
         f'src="data:image/jpeg;base64,{encoded}" alt="" />'
     )
+
+
+COMPARE_DEFAULT_SPLIT = 50
 
 
 HEADER_HTML = f"""
@@ -63,19 +68,6 @@ LIGHTTABLE_EMPTY_STATE = (
     "</div>"
     "</div>"
 )
-LIGHTTABLE_RUNNING_STATE = (
-    '<div class="halide-empty-lighttable active">'
-    '<div class="halide-empty-frame-grid">'
-    '<div><span>Vision extraction</span></div>'
-    '<div><span>Diagnostic report</span></div>'
-    "</div>"
-    '<div class="halide-empty-center">'
-    '<span>Running</span>'
-    '<strong>GPU inspection in progress</strong>'
-    "</div>"
-    "</div>"
-)
-
 REPORT_SECTIONS = {
     "root cause": "Root cause",
     "evidence": "Evidence",
@@ -126,7 +118,9 @@ def defect_table_rows(result: dict | None) -> list[list[str]]:
         else:
             box_text = "invalid"
         confidence = defect.get("confidence")
-        confidence_text = "" if confidence is None else f"{float(confidence):.2f}"
+        confidence_text = (
+            "not emitted" if confidence is None else f"{float(confidence):.2f}"
+        )
         rows.append([str(index), display, confidence_text, box_text])
     return rows
 
@@ -143,6 +137,8 @@ def stats_html(result: dict) -> str:
     rows.append(_stat_row("Total defects", str(defects.get("defect_count", 0))))
     rows.append(_stat_row("Dropped (invalid)", str(defects.get("dropped_count", 0))))
     rows.append(_stat_row("Duplicates removed", str(defects.get("duplicate_count", 0))))
+    rows.append(_stat_row("Edge artifacts removed", str(defects.get("edge_artifact_count", 0))))
+    rows.append(_stat_row("CV assist boxes", str(defects.get("classical_assist_count", 0))))
     rows.append(_stat_row("Resized for model", "yes" if defects.get("resized_for_model") else "no"))
     rows.append(_stat_row("Vision inference", f"{vision_s:.2f}s"))
     rows.append(_stat_row("Reasoning", f"{reasoning_s:.2f}s"))
@@ -187,6 +183,33 @@ def review_frame_html(original, annotated) -> str:
         '<a href="'
         + overlay_uri
         + '" target="_blank" rel="noreferrer">Open overlay</a>'
+        "</div>"
+    )
+
+
+def comparison_viewer_html(original, annotated) -> str:
+    """Render an aligned before/after viewer using the same image canvas."""
+    original_uri = image_to_data_uri(original, max_side=1800, quality=92)
+    overlay_uri = image_to_data_uri(annotated, max_side=1800, quality=92)
+    return (
+        '<div class="halide-compare-viewer" '
+        f'style="--halide-split: {COMPARE_DEFAULT_SPLIT}%;">'
+        '<div class="halide-compare-stage">'
+        f'<img class="halide-compare-base" src="{original_uri}" alt="" />'
+        '<div class="halide-compare-overlay">'
+        f'<img src="{overlay_uri}" alt="" />'
+        "</div>"
+        '<div class="halide-compare-divider"></div>'
+        '<span class="halide-compare-label original">Original</span>'
+        '<span class="halide-compare-label overlay">Validated overlay</span>'
+        "</div>"
+        '<input class="halide-compare-range" type="range" min="0" max="100" '
+        f'value="{COMPARE_DEFAULT_SPLIT}" '
+        'aria-label="Compare original and validated overlay" '
+        'oninput="const viewer=this.closest('
+        "'.halide-compare-viewer'); "
+        "if (viewer) { viewer.style.setProperty('--halide-split', this.value + '%'); }"
+        '" />'
         "</div>"
     )
 
@@ -327,10 +350,21 @@ def confidence_notice_html(result: dict) -> str:
     duplicate = int(defects.get("duplicate_count", 0) or 0)
     meta = result.get("film_metadata", {}) or {}
     confidence = str(meta.get("metadata_confidence", "low") or "low").lower()
+    confidence_values = [
+        defect.get("confidence")
+        for defect in defects.get("defects", []) or []
+        if defect.get("confidence") is not None
+    ]
 
     if total == 0:
         message = "No validated boxes were returned. Inspect the scan before assuming a film fault."
         tone = "neutral"
+    elif not confidence_values:
+        message = (
+            "Defect boxes passed schema validation. MiniCPM did not emit numeric "
+            "per-box confidence for this run."
+        )
+        tone = "good"
     elif confidence == "low":
         message = "Metadata is marked low confidence, so the diagnosis is driven mainly by visible defects."
         tone = "caution"
@@ -401,7 +435,6 @@ def history_table_rows(entries: Iterable[dict]) -> list[list[str]]:
                 str(entry.get("film_type", "Unknown")),
                 str(int(entry.get("defect_count", 0) or 0)),
                 compact_label_counts(entry.get("label_counts", {}) or {}),
-                str(entry.get("id", "")),
             ]
         )
     return rows
@@ -498,9 +531,9 @@ __all__ = [
     "HEADER_HTML",
     "EMPTY_STATE",
     "LIGHTTABLE_EMPTY_STATE",
-    "LIGHTTABLE_RUNNING_STATE",
     "REPORT_EMPTY_STATE",
     "compact_label_counts",
+    "comparison_viewer_html",
     "confidence_notice_html",
     "defect_table_rows",
     "defect_pills_html",

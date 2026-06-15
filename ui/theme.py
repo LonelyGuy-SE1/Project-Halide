@@ -4,23 +4,23 @@ from __future__ import annotations
 
 import gradio as gr
 
-BRASS = "#c59a52"
-BRASS_DARK = "#8a6431"
-COPPER = "#b85f3f"
-TEAL = "#66d4c1"
-VIOLET = "#9d8cff"
-RED = "#ef5d52"
+BRASS = "#d29a45"
+BRASS_DARK = "#8c5a1f"
+COPPER = "#be5f38"
+TEAL = "#9aae6f"
+VIOLET = "#8b5e4f"
+RED = "#d85c45"
 
-INK = "#0a0a0a"
-CARBON = "#111111"
-SURFACE = "#181715"
-SURFACE_SOFT = "#211f1c"
-SURFACE_LIFT = "#2c2924"
-PAPER = "#f3eadb"
-PAPER_SOFT = "#d7cbb8"
-MUTED = "#a99b88"
-BORDER = "#3a352e"
-BLACK = "#050505"
+INK = "#100d0a"
+CARBON = "#17110d"
+SURFACE = "#1f1711"
+SURFACE_SOFT = "#2b2118"
+SURFACE_LIFT = "#3a2b1f"
+PAPER = "#fff0d8"
+PAPER_SOFT = "#e6d1b6"
+MUTED = "#b89c77"
+BORDER = "#5a432f"
+BLACK = "#080604"
 
 THEME_CSS = f"""
 :root {{
@@ -60,8 +60,8 @@ body::before {{
   background:
     repeating-linear-gradient(
       90deg,
-      rgba(255, 255, 255, 0.018) 0,
-      rgba(255, 255, 255, 0.018) 1px,
+      rgba(255, 240, 216, 0.018) 0,
+      rgba(255, 240, 216, 0.018) 1px,
       transparent 1px,
       transparent 16px
     );
@@ -127,7 +127,7 @@ body::before {{
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 10px;
   min-width: min(42vw, 36rem);
 }}
 
@@ -137,17 +137,18 @@ body::before {{
   color: var(--halide-paper);
   background: rgba(24, 23, 21, 0.92);
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 9px 13px;
   font-size: 0.76rem;
   font-weight: 780;
-  line-height: 1;
+  line-height: 1.08;
   text-decoration: none;
   white-space: nowrap;
 }}
 
 .halide-model-strip a {{
-  color: #dffcf6;
-  border-color: rgba(102, 212, 193, 0.38);
+  color: #f5dfac;
+  border-color: rgba(154, 174, 111, 0.42);
+  background: rgba(58, 43, 31, 0.92);
 }}
 
 .halide-workbench {{
@@ -188,8 +189,8 @@ body::before {{
 }}
 
 .halide-model-card {{
-  border: 1px solid rgba(102, 212, 193, 0.28);
-  background: rgba(102, 212, 193, 0.055);
+  border: 1px solid rgba(154, 174, 111, 0.30);
+  background: rgba(154, 174, 111, 0.075);
   border-radius: 8px;
   padding: 12px;
   margin-top: 12px;
@@ -243,11 +244,11 @@ body::before {{
 }}
 
 .halide-run-state.active {{
-  border-color: rgba(102, 212, 193, 0.46);
+  border-color: rgba(154, 174, 111, 0.48);
 }}
 
 .halide-run-state.quiet {{
-  border-color: rgba(157, 140, 255, 0.35);
+  border-color: rgba(139, 94, 79, 0.38);
 }}
 
 .halide-run-eyebrow {{
@@ -259,7 +260,7 @@ body::before {{
 }}
 
 .halide-lighttable {{
-  background: #0f0f0e !important;
+  background: #120d09 !important;
   border: 1px solid rgba(197, 154, 82, 0.34) !important;
   border-radius: 8px !important;
   padding: 13px !important;
@@ -358,11 +359,11 @@ body::before {{
 }}
 
 .halide-empty-lighttable.active {{
-  border-color: rgba(102, 212, 193, 0.34);
+  border-color: rgba(154, 174, 111, 0.36);
 }}
 
 .halide-empty-lighttable.active .halide-empty-center {{
-  border-color: rgba(102, 212, 193, 0.42);
+  border-color: rgba(154, 174, 111, 0.44);
 }}
 
 .halide-empty-lighttable.active .halide-empty-center span {{
@@ -403,7 +404,6 @@ body::before {{
   line-height: 1;
 }}
 
-#halide-compare,
 .halide-review-gallery {{
   background: var(--halide-black) !important;
 }}
@@ -413,10 +413,93 @@ body::before {{
 }}
 
 .halide-upload img,
-#halide-compare img,
 .halide-review-gallery img {{
   background: var(--halide-black) !important;
   object-fit: contain !important;
+}}
+
+#halide-compare {{
+  min-height: 0 !important;
+}}
+
+.halide-compare-viewer {{
+  display: grid;
+  gap: 12px;
+  background: var(--halide-black);
+  border: 1px solid rgba(255, 240, 216, 0.16);
+  border-radius: 8px;
+  padding: 12px;
+}}
+
+.halide-compare-stage {{
+  position: relative;
+  min-height: clamp(380px, 58vh, 720px);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(180deg, rgba(31, 23, 17, 0.82), rgba(8, 6, 4, 0.98)),
+    repeating-linear-gradient(
+      90deg,
+      rgba(210, 154, 69, 0.055) 0,
+      rgba(210, 154, 69, 0.055) 1px,
+      transparent 1px,
+      transparent 34px
+    );
+  border-radius: 7px;
+}}
+
+.halide-compare-stage img {{
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--halide-black);
+}}
+
+.halide-compare-overlay {{
+  position: absolute;
+  inset: 0;
+  clip-path: inset(0 calc(100% - var(--halide-split)) 0 0);
+}}
+
+.halide-compare-divider {{
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--halide-split);
+  width: 2px;
+  transform: translateX(-1px);
+  background: rgba(255, 240, 216, 0.88);
+  box-shadow: 0 0 0 1px rgba(8, 6, 4, 0.70), 0 0 18px rgba(190, 95, 56, 0.38);
+}}
+
+.halide-compare-label {{
+  position: absolute;
+  top: 12px;
+  z-index: 2;
+  border: 1px solid rgba(255, 240, 216, 0.20);
+  background: rgba(16, 13, 10, 0.78);
+  color: var(--halide-paper);
+  border-radius: 999px;
+  padding: 6px 9px;
+  font-size: 0.70rem;
+  font-weight: 820;
+  line-height: 1;
+}}
+
+.halide-compare-label.original {{
+  left: 12px;
+}}
+
+.halide-compare-label.overlay {{
+  right: 12px;
+}}
+
+.halide-compare-range {{
+  width: 100%;
+  accent-color: var(--halide-copper);
 }}
 
 #halide-run-button,
@@ -511,8 +594,8 @@ button {{
 }}
 
 .halide-notice.good {{
-  border-color: rgba(102, 212, 193, 0.38);
-  background: rgba(102, 212, 193, 0.075);
+  border-color: rgba(154, 174, 111, 0.40);
+  background: rgba(154, 174, 111, 0.085);
 }}
 
 .halide-notice.caution {{
@@ -521,8 +604,8 @@ button {{
 }}
 
 .halide-notice.neutral {{
-  border-color: rgba(157, 140, 255, 0.36);
-  background: rgba(157, 140, 255, 0.075);
+  border-color: rgba(139, 94, 79, 0.38);
+  background: rgba(139, 94, 79, 0.085);
 }}
 
 .halide-stats {{
@@ -646,13 +729,13 @@ button {{
 }}
 
 .halide-defect-pill.long_hair {{
-  background: rgba(157, 140, 255, 0.13);
-  border-color: rgba(157, 140, 255, 0.38);
+  background: rgba(139, 94, 79, 0.14);
+  border-color: rgba(139, 94, 79, 0.40);
 }}
 
 .halide-defect-pill.short_hair {{
-  background: rgba(102, 212, 193, 0.11);
-  border-color: rgba(102, 212, 193, 0.36);
+  background: rgba(154, 174, 111, 0.12);
+  border-color: rgba(154, 174, 111, 0.38);
 }}
 
 .halide-defect-pill.emulsion_damage {{
@@ -661,8 +744,8 @@ button {{
 }}
 
 .halide-defect-pill.chemical_stain {{
-  background: rgba(74, 222, 128, 0.12);
-  border-color: rgba(74, 222, 128, 0.34);
+  background: rgba(154, 174, 111, 0.13);
+  border-color: rgba(154, 174, 111, 0.38);
 }}
 
 .halide-defect-pill.light_leak {{
@@ -888,11 +971,6 @@ footer a:hover {{
   z-index: 1;
 }}
 
-#halide-compare {{
-  min-height: 520px !important;
-  border: 1px solid rgba(243, 234, 219, 0.16) !important;
-}}
-
 .halide-review-actions {{
   display: flex;
   flex-wrap: wrap;
@@ -908,9 +986,9 @@ footer a:hover {{
   min-height: 36px;
   padding: 0 12px;
   border-radius: 8px;
-  border: 1px solid rgba(102, 212, 193, 0.34);
-  background: rgba(102, 212, 193, 0.08);
-  color: #dffcf6 !important;
+  border: 1px solid rgba(154, 174, 111, 0.38);
+  background: rgba(154, 174, 111, 0.09);
+  color: #f5dfac !important;
   text-decoration: none !important;
   font-size: 0.78rem;
   font-weight: 820;
@@ -918,8 +996,8 @@ footer a:hover {{
 
 .halide-review-actions a:hover,
 .halide-history-preview-actions a:hover {{
-  border-color: rgba(102, 212, 193, 0.62);
-  background: rgba(102, 212, 193, 0.13);
+  border-color: rgba(154, 174, 111, 0.62);
+  background: rgba(154, 174, 111, 0.14);
 }}
 
 .halide-report-subheading {{
@@ -938,9 +1016,9 @@ footer a:hover {{
 }}
 
 .halide-report-body code {{
-  color: #dffcf6;
-  background: rgba(102, 212, 193, 0.10);
-  border: 1px solid rgba(102, 212, 193, 0.22);
+  color: #f5dfac;
+  background: rgba(154, 174, 111, 0.10);
+  border: 1px solid rgba(154, 174, 111, 0.24);
   border-radius: 5px;
   padding: 1px 5px;
 }}
@@ -963,6 +1041,38 @@ footer a:hover {{
 
 .halide-history-table tbody tr {{
   cursor: pointer;
+}}
+
+.halide-history-table table {{
+  table-layout: fixed !important;
+}}
+
+.halide-history-table th,
+.halide-history-table td {{
+  font-size: 0.78rem !important;
+  line-height: 1.25 !important;
+  vertical-align: top !important;
+}}
+
+.halide-history-table th:nth-child(1),
+.halide-history-table td:nth-child(1) {{
+  width: 24% !important;
+}}
+
+.halide-history-table th:nth-child(2),
+.halide-history-table td:nth-child(2) {{
+  width: 31% !important;
+}}
+
+.halide-history-table th:nth-child(3),
+.halide-history-table td:nth-child(3) {{
+  width: 14% !important;
+  text-align: center !important;
+}}
+
+.halide-history-table th:nth-child(4),
+.halide-history-table td:nth-child(4) {{
+  width: 31% !important;
 }}
 
 .halide-history-table tbody tr:hover td {{
@@ -1104,7 +1214,7 @@ footer a:hover {{
     height: 190px !important;
   }}
 
-  #halide-compare {{
+  .halide-compare-stage {{
     min-height: 360px !important;
   }}
 
@@ -1143,17 +1253,17 @@ def build_theme() -> gr.Theme:
             c950="#1c1209",
         ),
         secondary_hue=gr.themes.Color(
-            c50="#effffb",
-            c100="#d5fff7",
-            c200="#a8f5ea",
+            c50="#f8faec",
+            c100="#eef3d1",
+            c200="#dbe6a9",
             c300=TEAL,
-            c400="#3fbfae",
-            c500="#259d90",
-            c600="#1d7d74",
-            c700="#1b645e",
-            c800="#174d49",
-            c900="#123c39",
-            c950="#071f1d",
+            c400="#7f9857",
+            c500="#667a43",
+            c600="#506236",
+            c700="#3e4d2b",
+            c800="#303c22",
+            c900="#252f1b",
+            c950="#131a0d",
         ),
         neutral_hue=gr.themes.Color(
             c50="#fbf7ef",

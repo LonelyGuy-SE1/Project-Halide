@@ -28,9 +28,10 @@ llama.cpp GGUF artifact:
 1. Upload a film scan in the Gradio interface.
 2. Add film metadata, or leave it unknown when it is only a guess.
 3. Run MiniCPM-V 4.6 on GPU to extract defect JSON.
-4. Validate boxes, drop invalid or low-confidence detections, merge near duplicates, and run tiled inspection when a large damaged scan is missed full-frame.
-5. Run Nemotron-Mini-4B-Instruct on GPU with lab-style few-shot prompts.
-6. Show an annotated scan, evidence quality, diagnosis, fixes, full JSON, and SQLite history.
+4. Validate boxes, drop invalid or low-confidence detections, filter repeated edge artifacts, merge near duplicates, and run tiled inspection when a large damaged scan is missed full-frame.
+5. Add conservative image-analysis scratch candidates when clear linear evidence is visible.
+6. Run Nemotron-Mini-4B-Instruct on GPU with lab-style few-shot prompts.
+7. Show an annotated scan, evidence quality, diagnosis, fixes, full JSON, and SQLite history.
 
 Local CPU is used only for safe development tasks: file I/O, image drawing,
 JSON parsing, tests, and dataset preparation. Model inference refuses to run
@@ -110,10 +111,13 @@ HALIDE_DOWNSAMPLE_MODE=4x
 HALIDE_MAX_SLICE_NUMS=36
 HALIDE_MAX_NEW_TOKENS=2048
 HALIDE_NEMOTRON_MAX_TOKENS=768
+HALIDE_GPU_DURATION_SECONDS=120
 HALIDE_ENABLE_TILE_FALLBACK=1
 HALIDE_TILE_MAX_SIDE=960
 HALIDE_TILE_OVERLAP=0.35
 HALIDE_TILE_MAX_TILES=9
+HALIDE_ENABLE_CLASSICAL_ASSIST=1
+HALIDE_CLASSICAL_ASSIST_MAX_DEFECTS=8
 ```
 
 The handler is decorated with `spaces.GPU` when the `spaces` package is

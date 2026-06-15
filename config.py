@@ -69,6 +69,8 @@ class VisionConfig:
     tile_max_side: int
     tile_overlap: float
     tile_max_tiles: int
+    classical_assist_enabled: bool
+    classical_assist_max_defects: int
 
 
 @dataclass(frozen=True)
@@ -109,6 +111,8 @@ def get_vision_config() -> VisionConfig:
         tile_max_side=env_int("HALIDE_TILE_MAX_SIDE", 960),
         tile_overlap=env_float("HALIDE_TILE_OVERLAP", 0.35),
         tile_max_tiles=env_int("HALIDE_TILE_MAX_TILES", 9),
+        classical_assist_enabled=env_bool("HALIDE_ENABLE_CLASSICAL_ASSIST", True),
+        classical_assist_max_defects=env_int("HALIDE_CLASSICAL_ASSIST_MAX_DEFECTS", 8),
     )
 
 
@@ -124,7 +128,7 @@ def get_app_config() -> AppConfig:
         db_path=env_path("HALIDE_DB_PATH", STORAGE_DIR / "halide.db"),
         cache_size=env_int("HALIDE_CACHE_SIZE", 64),
         cache_ttl_seconds=env_int("HALIDE_CACHE_TTL_SECONDS", 3600),
-        gpu_duration_seconds=env_int("HALIDE_GPU_DURATION_SECONDS", 300),
+        gpu_duration_seconds=env_int("HALIDE_GPU_DURATION_SECONDS", 120),
         max_history_items=env_int("HALIDE_HISTORY_LIMIT", 10),
     )
 

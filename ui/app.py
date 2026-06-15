@@ -22,8 +22,8 @@ from ui.components import (
     EMPTY_STATE,
     HEADER_HTML,
     LIGHTTABLE_EMPTY_STATE,
-    LIGHTTABLE_RUNNING_STATE,
     REPORT_EMPTY_STATE,
+    comparison_viewer_html,
     confidence_notice_html,
     defect_table_rows,
     defect_pills_html,
@@ -40,6 +40,14 @@ from ui.components import (
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+MAX_ZEROGPU_DURATION_SECONDS = 120
+
+
+def _gpu_duration_seconds() -> int:
+    return min(
+        max(1, int(get_app_config().gpu_duration_seconds)),
+        MAX_ZEROGPU_DURATION_SECONDS,
+    )
 
 
 def _gpu_decorator():
@@ -47,7 +55,7 @@ def _gpu_decorator():
         import spaces
     except ImportError:
         return lambda fn: fn
-    return spaces.GPU(duration=get_app_config().gpu_duration_seconds)
+    return spaces.GPU(duration=_gpu_duration_seconds())
 
 
 DEFAULT_FILM_TYPES = [
@@ -153,20 +161,6 @@ def _review_gallery(pil_image: Any, annotated: Any) -> list[tuple[Any, str]]:
     ]
 
 
-def _running_button_state() -> tuple[Any, str, Any]:
-    return (
-        gr.update(interactive=False, value="Diagnosing..."),
-        (
-            '<div class="halide-run-state active">'
-            '<span class="halide-run-eyebrow">Running</span>'
-            "<strong>GPU inspection in progress</strong>"
-            "<span>Vision extraction, validation, and report generation are running.</span>"
-            "</div>"
-        ),
-        gr.update(value=LIGHTTABLE_RUNNING_STATE, visible=True),
-    )
-
-
 def _attach_preview(result: dict, pil_image: Any, annotated: Any) -> dict:
     result = dict(result)
     if not isinstance(result.get("preview"), dict):
@@ -245,11 +239,7 @@ def run_pipeline(
 
         counts = result.get("defects", {}).get("label_counts", {}) or {}
         defects = result.get("defects", {}).get("defects", []) or []
-        annotated = draw_defects(
-            pil_image,
-            defects,
-            title=f"Halide: {len(defects)} validated defects",
-        )
+        annotated = draw_defects(pil_image, defects)
         result = _attach_preview(result, pil_image, annotated)
         if not was_cached:
             try:
@@ -261,8 +251,10 @@ def run_pipeline(
         elif not result.get("diagnosis_id"):
             cache.put(image_bytes, result, metadata=metadata)
 
-        image_pair = (pil_image, annotated)
-        compare = gr.update(value=image_pair, visible=True)
+        compare = gr.update(
+            value=comparison_viewer_html(pil_image, annotated),
+            visible=True,
+        )
         gallery = gr.update(value=_review_gallery(pil_image, annotated), visible=True)
         review_links = gr.update(
             value=review_frame_html(pil_image, annotated),
@@ -337,8 +329,6 @@ def open_history(diagnosis_id: str | None) -> tuple[str, str]:
 
 
 def _history_id_from_selection(rows: list[list[str]] | None, index: Any) -> str | None:
-    if rows is None:
-        return None
     row_index: int | None = None
     if isinstance(index, (list, tuple)) and index:
         try:
@@ -347,12 +337,12 @@ def _history_id_from_selection(rows: list[list[str]] | None, index: Any) -> str 
             row_index = None
     elif isinstance(index, int):
         row_index = index
-    if row_index is None or row_index < 0 or row_index >= len(rows):
+    if row_index is None or row_index < 0:
         return None
-    row = rows[row_index]
-    if len(row) < 5:
+    entries = list_recent(limit=get_app_config().max_history_items)
+    if row_index >= len(entries):
         return None
-    diagnosis_id = str(row[4] or "").strip()
+    diagnosis_id = str(entries[row_index].get("id") or "").strip()
     return diagnosis_id or None
 
 
@@ -446,15 +436,8 @@ def build_app() -> gr.Blocks:
                         "</div>"
                     )
                     lighttable_empty = gr.HTML(value=LIGHTTABLE_EMPTY_STATE)
-                    compare_output = gr.ImageSlider(
-                        value=None,
-                        label="Original / overlay",
-                        type="pil",
-                        height=620,
-                        max_height=680,
-                        slider_position=52,
-                        interactive=False,
-                        buttons=["download", "fullscreen"],
+                    compare_output = gr.HTML(
+                        value="",
                         elem_id="halide-compare",
                         visible=False,
                     )
@@ -506,8 +489,8 @@ def build_app() -> gr.Blocks:
                             refresh_btn = gr.Button("Refresh", size="sm")
                         history_table = gr.Dataframe(
                             value=initial_history_rows,
-                            headers=["Saved", "Film stock", "Defects", "Labels", "ID"],
-                            datatype=["str", "str", "str", "str", "str"],
+                            headers=["Saved", "Film stock", "Defects", "Labels"],
+                            datatype=["str", "str", "str", "str"],
                             type="array",
                             label="Recent diagnoses",
                             interactive=False,
@@ -539,12 +522,7 @@ def build_app() -> gr.Blocks:
             'target="_blank" rel="noreferrer">Source</a></footer>'
         )
 
-        run_event = run_btn.click(
-            fn=_running_button_state,
-            outputs=[run_btn, run_state_output, lighttable_empty],
-            queue=False,
-        )
-        run_event.then(
+        run_btn.click(
             fn=run_pipeline,
             inputs=[
                 image_input,
@@ -571,10 +549,7 @@ def build_app() -> gr.Blocks:
                 history_select,
                 history_table,
             ],
-        ).then(
-            fn=lambda: gr.update(interactive=True, value="Diagnose scan"),
-            outputs=[run_btn],
-            queue=False,
+            api_name="run_pipeline",
         )
         refresh_btn.click(
             fn=refresh_history,

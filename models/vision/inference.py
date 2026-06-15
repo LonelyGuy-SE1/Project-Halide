@@ -7,8 +7,16 @@ from pathlib import Path
 from typing import Any
 
 from config import get_vision_config
-from data.schemas import BBox, clean_defects, dedupe_defects, label_counts, normalize_bbox
+from data.schemas import (
+    BBox,
+    clean_defects,
+    dedupe_defects,
+    filter_edge_artifacts,
+    label_counts,
+    normalize_bbox,
+)
 from data.preprocessing import load_image
+from models.vision.classical_assist import detect_classical_defects
 from models.vision.minicpm_wrapper import get_detector
 
 logger = logging.getLogger(__name__)
@@ -31,6 +39,9 @@ def extract_defects(image: Any) -> dict:
     tile_fallback_used = False
     tile_count = 0
     tile_parse_errors: list[str] = []
+    classical_assist_count = 0
+    classical_assist_used = False
+    edge_artifact_count = 0
 
     cfg = get_vision_config()
     if _should_run_tile_fallback(input_image, cleaned):
@@ -60,6 +71,21 @@ def extract_defects(image: Any) -> dict:
                 break
         cleaned = tile_defects
 
+    if cfg.classical_assist_enabled:
+        classical_raw = detect_classical_defects(
+            input_image,
+            max_defects=cfg.classical_assist_max_defects,
+        )
+        classical_cleaned, classical_dropped = clean_defects(classical_raw)
+        dropped += classical_dropped
+        classical_cleaned = [
+            defect for defect in classical_cleaned if defect.get("label") == "scratch"
+        ]
+        classical_assist_count = len(classical_cleaned)
+        classical_assist_used = bool(classical_cleaned)
+        cleaned.extend(classical_cleaned)
+
+    cleaned, edge_artifact_count = filter_edge_artifacts(cleaned)
     cleaned, duplicate_count = dedupe_defects(cleaned)
     counts = label_counts(cleaned)
     elapsed = time.perf_counter() - started
@@ -70,6 +96,7 @@ def extract_defects(image: Any) -> dict:
         "label_counts": counts,
         "dropped_count": dropped,
         "duplicate_count": duplicate_count,
+        "edge_artifact_count": edge_artifact_count,
         "inference_seconds": round(elapsed, 3),
         "model_path": detector.model_path,
         "parse_error": raw.get("_parse_error"),
@@ -78,6 +105,8 @@ def extract_defects(image: Any) -> dict:
         "tile_count": tile_count,
         "full_frame_defect_count": full_frame_count,
         "tile_parse_errors": tile_parse_errors,
+        "classical_assist_used": classical_assist_used,
+        "classical_assist_count": classical_assist_count,
     }
 
 

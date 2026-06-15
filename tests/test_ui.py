@@ -7,7 +7,12 @@ from PIL import Image
 from storage.cache import get_cache
 from storage.database import get_diagnosis
 from ui import app as ui_app
-from ui.components import history_detail_html, diagnosis_html, raw_json_text
+from ui.components import (
+    comparison_viewer_html,
+    history_detail_html,
+    diagnosis_html,
+    raw_json_text,
+)
 
 
 def test_html_renderers_escape_model_and_user_text() -> None:
@@ -36,6 +41,17 @@ def test_html_renderers_escape_model_and_user_text() -> None:
     assert "<b>bad</b>" not in detail
     assert "&lt;b&gt;bad&lt;/b&gt;" in detail
     assert "<script>" not in detail
+
+
+def test_comparison_viewer_html_uses_stable_split_canvas() -> None:
+    image = Image.new("RGB", (32, 24), "black")
+    html = comparison_viewer_html(image, image)
+
+    assert 'style="--halide-split: 50%;"' in html
+    assert 'value="50"' in html
+    assert "this.closest('.halide-compare-viewer')" in html
+    assert "halide-compare-overlay" in html
+    assert html.count("data:image/jpeg;base64") == 2
 
 
 def test_run_pipeline_with_stubbed_diagnosis(monkeypatch, tmp_path) -> None:
@@ -98,11 +114,14 @@ def test_run_pipeline_with_stubbed_diagnosis(monkeypatch, tmp_path) -> None:
     assert review_links["visible"] is True
     assert "Open overlay" in review_links["value"]
     assert "data:image/jpeg;base64" in review_links["value"]
-    image_pair = compare_update["value"]
-    original, annotated = image_pair
+    assert "halide-compare-viewer" in compare_update["value"]
+    assert "halide-compare-range" in compare_update["value"]
+    assert "data:image/jpeg;base64" in compare_update["value"]
+    assert len(review_gallery["value"]) == 2
+    original = review_gallery["value"][0][0]
+    annotated = review_gallery["value"][1][0]
     assert original.size == (64, 64)
     assert annotated.size == (64, 64)
-    assert len(review_gallery["value"]) == 2
     assert review_gallery["visible"] is True
     assert "validated defect" in run_state
     assert pills["visible"] is True
@@ -114,13 +133,13 @@ def test_run_pipeline_with_stubbed_diagnosis(monkeypatch, tmp_path) -> None:
     assert '"model_path": "vision-stub"' in raw_json
     assert '"metadata_confidence": "low"' in raw_json
     assert "image data URI omitted" in raw_json
-    assert defect_rows == [["1", "Scratch", "", "0.100, 0.100, 0.700, 0.200"]]
+    assert defect_rows == [["1", "Scratch", "not emitted", "0.100, 0.100, 0.700, 0.200"]]
     assert "Transport scratch" in history_detail
     assert "halide-history-preview" in history_detail
     assert selector_update["value"]
     assert history_rows
     assert "Total defects" in stats
-    assert "visible defects" in notice
+    assert "MiniCPM did not emit numeric" in notice
 
 
 def test_empty_run_outputs_keep_lighttable_placeholder() -> None:
@@ -169,6 +188,11 @@ def test_metadata_confidence_normalization() -> None:
     assert ui_app.normalize_metadata_confidence("High, verified") == "high"
     assert ui_app.normalize_metadata_confidence("Medium, partly verified") == "medium"
     assert ui_app.normalize_metadata_confidence(None) == "low"
+
+
+def test_gpu_duration_cap(monkeypatch) -> None:
+    monkeypatch.setenv("HALIDE_GPU_DURATION_SECONDS", "450")
+    assert ui_app._gpu_duration_seconds() == ui_app.MAX_ZEROGPU_DURATION_SECONDS
 
 
 def test_pipeline_error_html_uses_friendly_gpu_message() -> None:
@@ -231,13 +255,13 @@ def test_history_table_selection_opens_saved_diagnosis(monkeypatch, tmp_path) ->
         "Low, rough guess",
     )
     history_rows = outputs[-1]
-    diagnosis_id = history_rows[0][4]
 
     selector_update, detail, raw = ui_app.open_history_from_table(
         history_rows,
         SimpleNamespace(index=(0, 0)),
     )
 
+    diagnosis_id = selector_update["value"]
     assert selector_update["value"] == diagnosis_id
     assert "No visible damage" in detail
     assert get_diagnosis(diagnosis_id) is not None

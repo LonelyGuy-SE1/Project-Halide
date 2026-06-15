@@ -69,9 +69,10 @@ Project Halide is an edge-native diagnostic workbench for analog film scans by
 
 The runtime uses MiniCPM-V 4.6 for defect extraction and
 Nemotron-Mini-4B-Instruct for diagnostic reasoning. The vision pass combines
-full-frame inspection with a tiled fallback for large scans where crack
-networks are too small in the global image. Model inference runs on the Space
-GPU runtime without cloud inference APIs.
+full-frame inspection, tiled fallback for large scans, a conservative
+image-analysis validator for obvious scratches, and geometric filtering for
+sprocket or frame-edge artifacts. Model inference runs on the Space GPU runtime
+without cloud inference APIs.
 
 Fine-tuned vision model:
 <https://huggingface.co/Lonelyguyse1/halide-vision>
@@ -88,6 +89,41 @@ Public launch post:
 Modal was used for offline training, held-out GPU evaluation, checkpoint upload,
 GGUF conversion, and Space deployment. The runtime app itself does not call
 Modal or any hosted inference API.
+
+## How It Works
+
+1. Upload a film scan, negative photo, or contact-sheet crop.
+2. MiniCPM-V 4.6 extracts candidate defects as structured JSON.
+3. The validator normalizes boxes, filters bad geometry, removes duplicate or
+   sprocket-like edge artifacts, and adds high-precision scratch candidates
+   when clear linear evidence is visible.
+4. Nemotron-Mini-4B-Instruct reads the validated evidence plus user metadata and
+   writes a lab-style diagnosis with physical fixes.
+5. SQLite stores local diagnostic history so earlier runs can be reopened.
+
+## Sponsor Usage
+
+- OpenBMB: MiniCPM-V 4.6 is the primary vision model, fine-tuned for film defect
+  extraction and published at `Lonelyguyse1/halide-vision`.
+- NVIDIA: Nemotron-Mini-4B-Instruct produces the diagnostic report and keeps
+  uncertain film metadata lower priority than visible evidence.
+- Modal: used offline for training, evaluation, checkpoint export, GGUF
+  conversion, model upload, and Space deployment support.
+- OpenAI Codex: used for implementation, testing, documentation, and
+  source-control commits in the linked GitHub repository.
+
+## Field Guide Alignment
+
+- Gradio Space under the official `build-small-hackathon` organization.
+- All runtime inference uses open weights on the Space GPU, with no hosted model
+  API calls.
+- Model sizes stay under the 32B limit, with MiniCPM-V 4.6 at 1.3B parameters
+  and Nemotron-Mini-4B-Instruct at 4B parameters.
+- Custom autumn-themed UI with a purpose-built compare viewer and diagnostic
+  history.
+- Fine-tuned vision model and GGUF artifact are published on the author's
+  Hugging Face profile.
+- Demo video, public launch post, and field notes are linked from this Space.
 
 Held-out validation summary:
 

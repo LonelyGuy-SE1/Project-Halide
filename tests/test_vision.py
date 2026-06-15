@@ -7,8 +7,10 @@ from data.schemas import (
     bbox_iou,
     clean_defects,
     dedupe_defects,
+    filter_edge_artifacts,
     normalize_bbox,
 )
+from models.vision.classical_assist import detect_classical_defects
 from models.vision.prompts import DETECTION_PROMPT_INT
 from scripts.convert_to_sharegpt import SYSTEM_PROMPT_INT
 from models.vision.minicpm_wrapper import DETECTION_PROMPT
@@ -107,6 +109,62 @@ def test_clean_defects_drops_central_subject_hair_like_false_positive() -> None:
     ]
 
 
+def test_filter_edge_artifacts_drops_sprocket_like_edge_noise() -> None:
+    filtered, dropped = filter_edge_artifacts(
+        [
+            {"label": "dust", "bbox": [0.058, 0.32, 0.083, 0.339]},
+            {"label": "scratch", "bbox": [0.0, 0.02, 0.01, 0.49]},
+            {"label": "scratch", "bbox": [0.84, 0.22, 0.86, 0.35], "confidence": 0.6},
+            {"label": "scratch", "bbox": [0.02, 0.51, 0.09, 0.53], "confidence": 0.6},
+            {"label": "scratch", "bbox": [0.25, 0.45, 0.7, 0.47]},
+        ]
+    )
+
+    assert dropped == 4
+    assert filtered == [{"label": "scratch", "bbox": [0.25, 0.45, 0.7, 0.47]}]
+
+
+def test_filter_edge_artifacts_keeps_high_confidence_edge_evidence() -> None:
+    filtered, dropped = filter_edge_artifacts(
+        [
+            {
+                "label": "scratch",
+                "bbox": [0.0, 0.02, 0.01, 0.49],
+                "confidence": 0.8,
+            },
+        ]
+    )
+
+    assert dropped == 0
+    assert filtered[0]["confidence"] == 0.8
+
+
+def test_classical_assist_detects_clear_bright_scratch() -> None:
+    img = Image.new("RGB", (240, 160), (40, 45, 50))
+    for x in range(35, 210):
+        img.putpixel((x, 80), (245, 245, 245))
+        img.putpixel((x, 81), (245, 245, 245))
+
+    defects = detect_classical_defects(img, max_defects=4)
+
+    assert defects
+    assert defects[0]["label"] == "scratch"
+    assert defects[0]["confidence"] <= 0.61
+
+
+def test_classical_assist_does_not_emit_compact_debris_by_default() -> None:
+    img = Image.new("RGB", (240, 160), (40, 45, 50))
+    for x in range(95, 105):
+        for y in range(75, 85):
+            img.putpixel((x, y), (245, 245, 245))
+
+    assert detect_classical_defects(img, max_defects=4) == []
+
+
+def test_classical_assist_ignores_tiny_images() -> None:
+    assert detect_classical_defects(Image.new("RGB", (32, 32), "black")) == []
+
+
 def test_min_defect_confidence_default_is_production_strict() -> None:
     assert MIN_DEFECT_CONFIDENCE >= 0.45
 
@@ -153,6 +211,8 @@ def test_extract_defects_uses_detector_stub(monkeypatch) -> None:
     assert result["label_counts"] == {"scratch": 1}
     assert result["dropped_count"] == 1
     assert result["duplicate_count"] == 1
+    assert "edge_artifact_count" in result
+    assert "classical_assist_count" in result
 
 
 def test_extract_defects_resizes_large_images_for_model(monkeypatch) -> None:

@@ -269,6 +269,69 @@ def dedupe_defects(
     return merged, duplicate_count
 
 
+def filter_edge_artifacts(defects: Iterable[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    """Drop repeated edge artifacts that look like film borders or sprockets."""
+    filtered: list[dict[str, Any]] = []
+    dropped = 0
+    for defect in defects:
+        label = str(defect.get("label", ""))
+        bbox = normalize_bbox(defect.get("bbox"))
+        if bbox is None:
+            dropped += 1
+            continue
+        if _is_edge_artifact(label, bbox, defect.get("confidence")):
+            dropped += 1
+            continue
+        filtered.append(_serialize_defect(label, bbox, defect))
+    return filtered, dropped
+
+
+def _is_edge_artifact(label: str, bbox: BBox, confidence: Any) -> bool:
+    x_min, y_min, x_max, y_max = bbox
+    width = x_max - x_min
+    height = y_max - y_min
+    area = width * height
+    center_x = (x_min + x_max) / 2.0
+    center_y = (y_min + y_max) / 2.0
+
+    try:
+        confidence_value = float(confidence) if confidence is not None else None
+    except (TypeError, ValueError):
+        confidence_value = None
+
+    low_evidence = confidence_value is None or confidence_value < 0.62
+    if not low_evidence:
+        return False
+
+    if label == "dust" and area < 0.0016 and (center_x < 0.12 or center_x > 0.88):
+        return True
+
+    if width < 0.02 and height > 0.18 and (x_min <= 0.004 or x_max >= 0.996):
+        return True
+
+    if height < 0.02 and width > 0.22 and (y_min <= 0.004 or y_max >= 0.996):
+        return True
+
+    if label in {"scratch", "emulsion_damage"}:
+        if width < 0.075 and height > 0.22 and (x_min <= 0.006 or x_max >= 0.994):
+            return True
+        if height < 0.075 and width > 0.22 and (y_min <= 0.006 or y_max >= 0.994):
+            return True
+
+    if label == "scratch":
+        if width < 0.04 and height > 0.05 and (center_x < 0.12 or center_x > 0.78):
+            return True
+        if height < 0.04 and width > 0.05 and (
+            center_y < 0.08
+            or center_y > 0.88
+            or center_x < 0.12
+            or center_x > 0.78
+        ):
+            return True
+
+    return False
+
+
 def bbox_area(bbox: Any) -> float:
     norm = normalize_bbox(bbox)
     if norm is None:
@@ -361,6 +424,7 @@ __all__ = [
     "bbox_to_pixels",
     "clean_defects",
     "dedupe_defects",
+    "filter_edge_artifacts",
     "label_counts",
     "normalize_bbox",
     "spatial_summary",

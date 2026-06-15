@@ -22,16 +22,41 @@ inspection showed that the model could recognize the same damage on crops, so
 the failure was mainly scale and attention, not a complete lack of learned
 semantics.
 
-The final runtime therefore uses a two-pass vision strategy:
+The final runtime therefore uses a vision strategy with model output plus a
+small validator assist:
 
 1. Run full-frame MiniCPM-V extraction.
 2. If a large scan returns too few validated defects, run overlapping 960 px
    tiles.
 3. Remap tile boxes back to full-image coordinates.
-4. Validate, confidence-filter, and dedupe the combined boxes.
+4. Validate, confidence-filter, and remove repeated sprocket or frame-edge
+   artifacts.
+5. Add conservative image-analysis scratch candidates when clear bright linear
+   evidence is visible.
+6. Dedupe the combined boxes.
 
 This keeps clean scans inexpensive while recovering small or transparent damage
 that disappears in a full-frame view.
+
+## Real Web-Sourced Negative Check
+
+Additional public examples were collected from photography forums and
+restoration references, including a real color negative strip with emulsion
+dirt, annotated Photrio negative strips, static-discharge examples, and damaged
+positive scans from Analog.Cafe. These were kept in `.nottracked` for
+inspection, not committed as public assets.
+
+The check exposed two useful limits:
+
+1. Raw strip photos can be harder than flatbed scan frames because sprocket
+   holes and film borders look like repeated dust boxes.
+2. Positive scans with obvious scratches can still confuse the vision model
+   when subject content, sky gradients, or aircraft silhouettes dominate the
+   frame.
+
+The validator changes specifically target those failures by filtering repeated
+edge artifacts and by preserving high-precision scratch evidence that is
+visible in local contrast.
 
 ## Final Held-Out Smoke Test
 

@@ -41,7 +41,7 @@ def deploy_space(
             "key": "HALIDE_VISION_FINETUNED_MODEL_ID",
             "value": model_repo_id,
         },
-        {"key": "HALIDE_GPU_DURATION_SECONDS", "value": "300"},
+        {"key": "HALIDE_GPU_DURATION_SECONDS", "value": "120"},
         {"key": "HALIDE_ENABLE_TILE_FALLBACK", "value": "1"},
         {"key": "HALIDE_TILE_MAX_SIDE", "value": "960"},
         {"key": "HALIDE_TILE_OVERLAP", "value": "0.35"},
