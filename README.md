@@ -115,6 +115,8 @@ sprocket holes, and stain-like damage.
 | --- | --- |
 | ![Real damaged 35mm negative strip](https://lonelyguy.vercel.app/assets/halide/real-35mm-negative.jpg) | ![Validated Project Halide overlay on 35mm strip](https://lonelyguy.vercel.app/assets/halide/real-35mm-negative-overlay.png) |
 
+In order to view the detailed diagnosis, try the demo by visiting the huggingface space!
+
 ## Pipeline
 
 ```text
