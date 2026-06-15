@@ -1,51 +1,100 @@
-# Project Halide
+<div align="center">
 
-Edge-native diagnostic engine for analog film scans. Halide analyzes a scan or
-contact-sheet crop, extracts visible film and scanner defects, then produces a
-lab-style diagnosis with physical fixes.
+<pre>
+    __  __      ___     __
+   / / / /___ _/ (_)___/ /__
+  / /_/ / __ `/ / / __  / _ \
+ / __  / /_/ / / / /_/ /  __/
+/_/ /_/\__,_/_/_/\__,_/\___/
+</pre>
 
-Author: [Lonelyguyse1](https://huggingface.co/Lonelyguyse1)
+<h1>Project Halide</h1>
 
-Source: <https://github.com/LonelyGuy-SE1/Project-Halide>
+<p><strong>Evidence-first diagnostics for damaged analog film.</strong></p>
 
-Live demo: <https://huggingface.co/spaces/build-small-hackathon/project-halide>
+<p>
+Halide inspects film scans and negative photos, extracts visible defect
+evidence, validates it, and turns it into lab-style physical next steps.
+</p>
 
-Profile mirror: <https://huggingface.co/spaces/Lonelyguyse1/project-halide>
+<p>
+  <a href="https://huggingface.co/spaces/build-small-hackathon/project-halide"><img alt="Live Space" src="https://img.shields.io/badge/Live%20Space-Hugging%20Face-ff6b35?style=for-the-badge&amp;logo=huggingface&amp;logoColor=white"></a>
+  <a href="https://youtube.com/watch?si=apzCiBZcIZWC1nFt&amp;v=DGJ2M1aQCrE&amp;feature=youtu.be"><img alt="Demo Video" src="https://img.shields.io/badge/Demo-YouTube-dc2626?style=for-the-badge&amp;logo=youtube&amp;logoColor=white"></a>
+  <a href="https://lonelyguy.vercel.app/articles/2026-06-16-project-halide"><img alt="Technical Blog" src="https://img.shields.io/badge/Technical%20Blog-Field%20Notes-cc8833?style=for-the-badge"></a>
+  <a href="https://x.com/lonelyguyse1/status/2066631507956105423?s=20"><img alt="Launch Post" src="https://img.shields.io/badge/Launch%20Post-X-000000?style=for-the-badge&amp;logo=x&amp;logoColor=white"></a>
+</p>
 
-Fine-tuned vision model: <https://huggingface.co/Lonelyguyse1/halide-vision>
+<p>
+  <a href="https://huggingface.co/Lonelyguyse1/halide-vision"><img alt="Vision Model" src="https://img.shields.io/badge/Vision%20Model-MiniCPM--V%204.6-4a7c59?style=flat-square"></a>
+  <a href="https://huggingface.co/nvidia/Nemotron-Mini-4B-Instruct"><img alt="Reasoning Model" src="https://img.shields.io/badge/Reasoning-Nemotron--Mini--4B-c4284a?style=flat-square"></a>
+  <a href="#runtime-rules"><img alt="Runtime" src="https://img.shields.io/badge/Runtime-GPU%20only-e87d2f?style=flat-square"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache--2.0-blue?style=flat-square"></a>
+</p>
 
-Demo video: <https://youtube.com/watch?si=apzCiBZcIZWC1nFt&v=DGJ2M1aQCrE&feature=youtu.be>
+<img alt="Project Halide app screenshot" src="https://lonelyguy.vercel.app/assets/halide/halide-app.png" width="100%">
 
-Public launch post: <https://x.com/lonelyguyse1/status/2066631507956105423?s=20>
+</div>
 
-Technical blog:
-<https://lonelyguy.vercel.app/articles/2026-06-16-project-halide>
+## Quick Links
 
-llama.cpp GGUF artifact:
-<https://huggingface.co/Lonelyguyse1/halide-vision/blob/main/minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625-q4_k_m.gguf>
+| Link | Target |
+| --- | --- |
+| Live app | <https://huggingface.co/spaces/build-small-hackathon/project-halide> |
+| Profile mirror | <https://huggingface.co/spaces/Lonelyguyse1/project-halide> |
+| Demo video | <https://youtube.com/watch?si=apzCiBZcIZWC1nFt&v=DGJ2M1aQCrE&feature=youtu.be> |
+| Technical blog | <https://lonelyguy.vercel.app/articles/2026-06-16-project-halide> |
+| Launch post | <https://x.com/lonelyguyse1/status/2066631507956105423?s=20> |
+| Fine-tuned vision model | <https://huggingface.co/Lonelyguyse1/halide-vision> |
+| GGUF artifact | <https://huggingface.co/Lonelyguyse1/halide-vision/blob/main/minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625-q4_k_m.gguf> |
+| Author | <https://huggingface.co/Lonelyguyse1> |
 
 ## What It Does
 
-1. Upload a film scan in the Gradio interface.
+Halide is not a restoration filter. It is a diagnostic workbench for deciding
+what physical problem a film scan is showing and what to try next.
+
+1. Upload a film scan, negative photo, or contact-sheet crop.
 2. Add film metadata, or leave it unknown when it is only a guess.
-3. Run MiniCPM-V 4.6 on GPU to extract defect JSON.
-4. Validate boxes, drop invalid or low-confidence detections, filter repeated edge artifacts, merge near duplicates, and run tiled inspection when a large damaged scan is missed full-frame.
-5. Add conservative image-analysis scratch candidates when clear linear evidence is visible.
-6. Run Nemotron-Mini-4B-Instruct on GPU with lab-style few-shot prompts.
-7. Show an annotated scan, evidence quality, diagnosis, fixes, full JSON, and SQLite history.
+3. Extract candidate defects with MiniCPM-V 4.6 on GPU.
+4. Validate boxes, filter sprocket and frame-edge artifacts, merge duplicates,
+   and fall back to tiled inspection when full-frame inference misses damage.
+5. Add conservative image-analysis scratch candidates when clear linear
+   evidence is visible.
+6. Use Nemotron-Mini-4B-Instruct to write physical diagnosis and next steps.
+7. Review the annotated scan, evidence quality, full JSON, and SQLite history.
 
 Local CPU is used only for safe development tasks: file I/O, image drawing,
 JSON parsing, tests, and dataset preparation. Model inference refuses to run
 unless CUDA is visible.
 
+## Visual Evidence
+
+Halide is built around inspectable visual evidence. The examples below use real
+damaged negatives and real validation overlays, not generated placeholder art.
+
+| Held-out negative | Validated overlay |
+| --- | --- |
+| ![Held-out scratched negative](https://lonelyguy.vercel.app/assets/halide/negative1-original.png) | ![Validated overlay for held-out negative](https://lonelyguy.vercel.app/assets/halide/negative1-overlay.png) |
+
+The public demo case also uses a real 35mm negative strip with residue, glare,
+sprocket holes, and stain-like damage.
+
+| Demo 35mm negative | Validated overlay |
+| --- | --- |
+| ![Real damaged 35mm negative strip](https://lonelyguy.vercel.app/assets/halide/real-35mm-negative.jpg) | ![Validated Project Halide overlay on 35mm strip](https://lonelyguy.vercel.app/assets/halide/real-35mm-negative-overlay.png) |
+
 ## Architecture
 
 ```text
-Film scan
+film scan or negative photo
   -> MiniCPM-V 4.6 vision extraction
+  -> schema validation and artifact filtering
+  -> tiled fallback for missed large-scan damage
+  -> conservative scratch assist
   -> validated defect JSON
   -> Nemotron-Mini-4B-Instruct diagnostic reasoning
-  -> Gradio UI and SQLite history
+  -> custom Gradio light-table UI
+  -> SQLite diagnosis history
 ```
 
 Default models:
@@ -262,7 +311,7 @@ Verification highlights:
 - Local unit tests cover UI handlers, storage, schema validation, pipeline orchestration, prompt construction, and evaluation utilities.
 - Python compile checks cover all repository Python files.
 - Live Space tests are run from a GPU-backed runtime, not local CPU.
-- Public launch materials include a short MP4 demo, live Space screenshots, a public synthetic before/after run, a technical blog, and a launch note on Hugging Face.
+- Public launch materials include a short MP4 demo, live Space screenshots, real negative before/after evidence, a technical blog, and a launch note on Hugging Face.
 
 ## License
 
