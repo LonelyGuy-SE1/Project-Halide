@@ -49,12 +49,20 @@ tags:
   - diagnostics
   - track:backyard
   - sponsor:openbmb
+  - sponsor:nemotron
   - sponsor:nvidia
   - sponsor:modal
+  - sponsor:codex
   - sponsor:openai
+  - badge:off-brand
   - badge:offbrand
+  - badge:tiny-titan
   - badge:tiny
+  - badge:best-demo
   - badge:demo
+  - badge:best-agent
+  - badge:bonus-quest
+  - badge:quest-champion
   - badge:quest
   - achievement:offgrid
   - achievement:welltuned
