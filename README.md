@@ -74,6 +74,25 @@ treats uncertain film notes as context rather than truth.
 - Uses Nemotron-Mini-4B-Instruct to write a physical diagnosis and next steps.
 - Stores local SQLite history so previous diagnoses can be reopened.
 
+## The Data Story
+
+The hardest part was not connecting the models. It was finding useful training
+data. Public examples of damaged film are scattered across forum posts,
+restoration articles, scanner screenshots, and phone photos of negatives. Many
+are positive scans rather than negatives, many include arrows or annotations,
+and many show real damage without a verified physical cause.
+
+Halide therefore uses a layered training curriculum rather than pretending a
+clean dataset already existed. The vision set combines FilmDamageSimulator
+annotations, procedural film-defect positives, synthetic scratches and stains,
+hard clean negatives, and lookalike counterexamples such as grass, subject hair,
+sprocket holes, borders, and glare. The five user-supplied negatives stayed
+held out for evaluation only.
+
+That data work shaped the product. Fine-tuning improved structured output and
+film-defect vocabulary, while the validation layer, tiled fallback, and overlay
+UI handle the messy cases that data alone did not solve.
+
 ## What Fine-Tuning Changed
 
 The first version could produce plausible boxes, but it was not reliable enough for film diagnostics. It confused sprocket holes, borders, glare, grass, and subject hair with film defects, and it sometimes returned prose or malformed JSON when the pipeline needed structured evidence.

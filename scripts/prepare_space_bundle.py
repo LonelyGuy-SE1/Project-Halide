@@ -89,6 +89,13 @@ emulsion-damage vocabulary, and fewer obvious false positives on clean or
 lookalike regions. The runtime still treats model output as candidate evidence
 and validates every box.
 
+The data bottleneck was central to the build. Public damaged-film examples are
+scattered, noisy, and often not real negatives, so the training curriculum
+combines FilmDamageSimulator annotations, procedural defect positives, synthetic
+scratches and stains, hard clean negatives, and lookalike counterexamples such
+as grass, subject hair, sprocket holes, borders, and glare. The five private
+negatives stayed held out for evaluation only.
+
 Source repository:
 <https://github.com/LonelyGuy-SE1/Project-Halide>
 
