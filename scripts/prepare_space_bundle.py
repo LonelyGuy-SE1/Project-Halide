@@ -83,6 +83,12 @@ without cloud inference APIs.
 Fine-tuned vision model:
 <https://huggingface.co/Lonelyguyse1/halide-vision>
 
+Fine-tuning improved the vision stage where it mattered most for the app:
+structured defect JSON, consistent film-defect labels, scratch and
+emulsion-damage vocabulary, and fewer obvious false positives on clean or
+lookalike regions. The runtime still treats model output as candidate evidence
+and validates every box.
+
 Source repository:
 <https://github.com/LonelyGuy-SE1/Project-Halide>
 

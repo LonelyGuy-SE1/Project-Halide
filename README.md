@@ -74,6 +74,12 @@ treats uncertain film notes as context rather than truth.
 - Uses Nemotron-Mini-4B-Instruct to write a physical diagnosis and next steps.
 - Stores local SQLite history so previous diagnoses can be reopened.
 
+## What Fine-Tuning Changed
+
+The first version could produce plausible boxes, but it was not reliable enough for film diagnostics. It confused sprocket holes, borders, glare, grass, and subject hair with film defects, and it sometimes returned prose or malformed JSON when the pipeline needed structured evidence.
+
+The fine-tuned MiniCPM-V checkpoint improved the parts that matter most for Halide: stable defect JSON, consistent labels, better scratch and emulsion-damage vocabulary, and fewer obvious clean-image false positives. It did not make the model an authority, so the runtime still validates every box, filters geometry, and falls back to tiled inspection when full-frame inference misses damage.
+
 ## Visual Evidence
 
 Halide is built around inspectable evidence. These examples use real damaged
@@ -107,7 +113,7 @@ film scan or negative photo
 | Stage | Model or system | Role |
 | --- | --- | --- |
 | Vision extraction | `openbmb/MiniCPM-V-4.6` | Finds candidate film defects from the image |
-| Fine-tuned checkpoint | `Lonelyguyse1/halide-vision` | Improves defect-schema reliability for the Halide task |
+| Fine-tuned checkpoint | `Lonelyguyse1/halide-vision` | Fine-tuned for Halide defect JSON, scratch and emulsion-damage vocabulary, and cleaner evidence proposals |
 | Reasoning | `nvidia/Nemotron-Mini-4B-Instruct` | Turns validated evidence into a lab-style report |
 | Validation | Local Python pipeline | Filters boxes, handles tiling, and protects against obvious artifacts |
 | Interface | Gradio custom UI | Light-table review, compare viewer, raw evidence, and history recall |
@@ -203,43 +209,13 @@ Implemented:
   training, model upload, Space deployment, and GGUF conversion helpers.
 - CPU-safe unit tests with model stubs.
 
-Known limits:
+Product scope:
 
 - Halide is an inspection aid, not an archival authority.
 - Broad damage can be over-boxed into multiple regions.
 - A physical defect may receive more than one label when its appearance overlaps
   scratch, chemical stain, and lifted emulsion cues.
 - Film metadata should be trusted only when the user is confident in it.
-
-## Submission Metadata
-
-The official Hugging Face Space README is the validator source. It carries:
-
-```yaml
-tags:
-  - track:backyard
-  - sponsor:openbmb
-  - sponsor:openai
-  - sponsor:nvidia
-  - sponsor:modal
-  - achievement:offgrid
-  - achievement:welltuned
-  - achievement:offbrand
-  - achievement:fieldnotes
-```
-
-Alignment:
-
-| Area | Evidence |
-| --- | --- |
-| Practical track | Film-diagnostics workflow for real analog scan problems |
-| OpenBMB | MiniCPM-V 4.6 vision extraction |
-| NVIDIA | Nemotron-Mini-4B-Instruct diagnostic reasoning |
-| Modal | Offline training, evaluation, conversion, upload, and deployment support |
-| Local-first runtime | Open weights on the Space GPU, no hosted inference API calls |
-| Fine-tuned model | `Lonelyguyse1/halide-vision` |
-| Custom UI | Autumn light-table interface beyond default Gradio styling |
-| Field notes | Public technical report and blog linked above |
 
 ## License
 
