@@ -20,6 +20,9 @@ Demo video: <https://huggingface.co/spaces/build-small-hackathon/project-halide/
 
 Public launch post: <https://huggingface.co/spaces/build-small-hackathon/project-halide/discussions/1>
 
+Technical blog:
+<https://lonelyguy.vercel.app/articles/2026-06-16-project-halide>
+
 llama.cpp GGUF artifact:
 <https://huggingface.co/Lonelyguyse1/halide-vision/blob/main/minicpm-v-4.6-merged-v7-crack-curriculum-r1-ckpt625-q4_k_m.gguf>
 
@@ -127,6 +130,11 @@ available. The app also exposes an optional `gr.Server` builder at
 Modal was used for offline training, held-out GPU evaluation, checkpoint
 upload, GGUF conversion, and Space deployment. The runtime app itself does not
 call Modal or any hosted inference API.
+
+GPUs used across the build: Modal A100-80GB for training/export workloads,
+Modal T4 for lower-cost GPU checks, Hugging Face ZeroGPU A10G for the official
+Space runtime, and a Hugging Face T4 Space mirror for final browser validation
+after ZeroGPU quota was exhausted.
 
 ## Dataset And Training
 
@@ -256,7 +264,7 @@ Verification highlights:
 - Local unit tests cover UI handlers, storage, schema validation, pipeline orchestration, prompt construction, and evaluation utilities.
 - Python compile checks cover all repository Python files.
 - Live Space tests are run from a GPU-backed runtime, not local CPU.
-- Public launch materials include a short MP4 demo, live Space screenshots, a public synthetic before/after run, and a launch note on Hugging Face.
+- Public launch materials include a short MP4 demo, live Space screenshots, a public synthetic before/after run, a technical blog, and a launch note on Hugging Face.
 
 ## License
 
@@ -283,7 +291,7 @@ Prize and badge alignment:
 
 - Backyard AI: practical film-diagnostics workflow for real analog scan problems.
 - OpenBMB: MiniCPM-V 4.6 is the vision extraction model.
-- OpenAI: Codex-attributed commits are present in the connected GitHub history.
+- OpenAI: source-control history includes the required attributed development work.
 - NVIDIA: Nemotron-Mini-4B-Instruct writes the diagnostic report.
 - Modal: used for offline training, evaluation, conversion, upload, and Space deployment.
 - Off the Grid: runtime uses open weights on the Space GPU with no hosted inference APIs.

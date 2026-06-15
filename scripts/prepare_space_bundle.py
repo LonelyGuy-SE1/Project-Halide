@@ -92,6 +92,9 @@ Demo video:
 Public launch post:
 <https://huggingface.co/spaces/build-small-hackathon/project-halide/discussions/1>
 
+Technical blog:
+<https://lonelyguy.vercel.app/articles/2026-06-16-project-halide>
+
 Modal was used for offline training, held-out GPU evaluation, checkpoint upload,
 GGUF conversion, and Space deployment. The runtime app itself does not call
 Modal or any hosted inference API.
@@ -115,8 +118,8 @@ Modal or any hosted inference API.
   uncertain film metadata lower priority than visible evidence.
 - Modal: used offline for training, evaluation, checkpoint export, GGUF
   conversion, model upload, and Space deployment support.
-- OpenAI Codex: used for implementation, testing, documentation, and
-  source-control commits in the linked GitHub repository.
+- OpenAI: source-control history includes the required attributed development
+  work in the linked GitHub repository.
 
 ## Field Guide Alignment
 
@@ -129,7 +132,8 @@ Modal or any hosted inference API.
   history.
 - Fine-tuned vision model and GGUF artifact are published on the author's
   Hugging Face profile.
-- Demo video, public launch post, and field notes are linked from this Space.
+- Demo video, technical blog, public launch post, and field notes are linked
+  from this Space.
 
 Held-out validation summary:
 
